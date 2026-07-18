@@ -12,6 +12,9 @@ import {
 } from '../utils/ZoomController';
 import type { AppSettings, FaceLockStatus } from '../types';
 
+/** DEV: 合成 faceW 测试控制环(无需真人移动)。true=注入合成数据验证镜头是否会动; 验证后改 false。 */
+const DEV_TEST_SYNTH = false;
+
 /** Zoom控制Hook的 Props */
 interface UseZoomControlProps {
   /** 当前摄像头zoom倍数 */
@@ -98,6 +101,7 @@ export function useZoomControl({
    * - 从 'locked' -> 'no-face': 人脸丢失，重置
    */
   useEffect(() => {
+    if (DEV_TEST_SYNTH) return; // DEV: 跳过真实目标锁定, 由合成 effect 接管
     const prevStatus = lastLockStatusRef.current;
     const currentStatus = faceLockStatus;
 
@@ -124,6 +128,7 @@ export function useZoomControl({
    * 当 primaryFaceWidth 变化时（即检测到新人脸帧），计算新的zoom
    */
   useEffect(() => {
+    if (DEV_TEST_SYNTH) return; // DEV: 跳过真实控制环, 由合成 effect 接管
     // 只有在锁定状态且有有效人脸宽度时才更新zoom
     if (
       faceLockStatus === 'locked' ||
@@ -162,6 +167,38 @@ export function useZoomControl({
     // 注意：currentZoomRatio 故意不放入依赖。每次新检测(primaryFaceWidth变化)时闭包已捕获其最新值；
     // 若放入依赖，setNormalizedZoom→currentZoomRatio变化→effect再触发，会形成反馈回路在单帧内冲到 maxZoom。
   ]);
+
+  /**
+   * DEV: 合成 faceW 测试控制环(无需真人移动)
+   * 模拟用户距离 D 振荡, faceW = target * zoom / D (真实物理耦合: zoom升→脸大)
+   * 期望: D大(远)→zoom升保持脸≈150; D小(近)→zoom clamp 1.0
+   */
+  useEffect(() => {
+    if (!DEV_TEST_SYNTH) return;
+    if (!controllerRef.current || maxZoomRatio <= 0) return;
+    controllerRef.current.setTargetFaceSize(150);
+    targetSetRef.current = true;
+    setShowLockIndicator(true);
+    console.log('[DEV] 合成测试启动 target=150 (耦合 faceW=150*zoom/D, 无需真人)');
+    const start = Date.now();
+    const id = setInterval(() => {
+      if (!controllerRef.current) return;
+      const t = (Date.now() - start) / 1000;
+      const D = 1.0 + 0.7 * Math.sin(t * 0.4); // 合成距离 0.3↔1.7
+      const curZ = currentZoomRef.current > 0 ? currentZoomRef.current : 1.0;
+      const syntheticFaceW = (150 * curZ) / D; // 耦合: zoom 升→脸大
+      const z = controllerRef.current.update(syntheticFaceW, curZ);
+      const norm = convertZoomToNormalized(z, minZoomRatio, maxZoomRatio);
+      setNormalizedZoom(norm);
+      setDisplayZoom(z);
+      console.log(
+        '[DEV] t=' + t.toFixed(1) + 's D=' + D.toFixed(2) +
+        ' faceW=' + syntheticFaceW.toFixed(0) +
+        ' zoom=' + z.toFixed(3) + 'x norm=' + norm.toFixed(3)
+      );
+    }, 250);
+    return () => clearInterval(id);
+  }, [DEV_TEST_SYNTH, maxZoomRatio, minZoomRatio, setNormalizedZoom]);
 
   /**
    * 手动重置zoom控制
