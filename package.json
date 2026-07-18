@@ -1,0 +1,37 @@
+{
+  "name": "hitchcock-dolly-zoom-camera",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "prebuild": "expo prebuild --clean",
+    "build:debug": "cd android && ./gradlew assembleDebug",
+    "build:release": "cd android && ./gradlew assembleRelease",
+    "ios": "expo run:ios"
+  },
+  "dependencies": {
+    "expo": "~52.0.0",
+    "expo-asset": "~11.0.5",
+    "expo-constants": "~17.0.8",
+    "expo-file-system": "~18.0.12",
+    "expo-font": "~13.0.4",
+    "expo-keep-awake": "~14.0.3",
+    "expo-media-library": "~17.0.0",
+    "expo-status-bar": "~2.0.1",
+    "react": "18.3.1",
+    "react-native": "0.76.3",
+    "react-native-vision-camera": "^4.5.0",
+    "react-native-vision-camera-face-detector": "^1.10.2",
+    "react-native-worklets-core": "^1.6.3"
+  },
+  "devDependencies": {
+    "@babel/plugin-transform-template-literals": "^8.0.1",
+    "@babel/preset-env": "^8.0.2",
+    "@babel/preset-typescript": "^8.0.1",
+    "@react-native-community/cli": "^20.2.0",
+    "@types/react": "~18.3.12",
+    "typescript": "^5.3.3"
+  },
+  "private": true
+}
