@@ -27,5 +27,8 @@ local.properties
 Thumbs.db
 
 # Python / Scripts
+# Submodules (embedded git repos)
+hitchcock-apk/
+
 __pycache__/
 *.pyc
