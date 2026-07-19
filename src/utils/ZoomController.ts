@@ -155,12 +155,12 @@ export class ZoomController {
   }
 
   /**
-   * PID 控制算法 — P(快速响应) + I(稳态精度) + D(制动防过冲)
+   * PID 控制算法 — 固定增益 P+I+D (无自适应元素, 确保环路稳定)
    *
-   * D 项基于测量值(faceW 变化率)而非误差, 避免 setpoint 突变时的微分尖峰。
-   * 外层套 slew-rate 安全帽, 防止 PID 异常时大幅跳变。
+   * Kp/Ki/Kd 设定后固定不变。P/I/D 输出项随误差变化(这是 PID 的正常行为),
+   * 但增益本身恒定 → 环路传递函数稳定。
    *
-   * @param facePixelSize - 当前人脸 metric (眼距或 bounding box 宽度)
+   * @param facePixelSize - 当前人脸 metric (眼距 MA)
    * @param currentZoom - 当前摄像头zoom倍数
    * @returns 目标zoom倍数
    */
@@ -178,47 +178,36 @@ export class ZoomController {
     // 归一化误差: e>0 脸太小(远,需zoom in), e<0 脸太大(近,需zoom out)
     const error = (this.targetSize - facePixelSize) / this.targetSize;
 
-    // 积分项 (带 anti-windup 限幅)
+    // 积分项 (anti-windup ±0.5)
     this.integralError += error * dt;
     this.integralError = Math.max(-0.5, Math.min(0.5, this.integralError));
 
-    // 微分项 (基于测量值: faceW 增大→D<0→制动, 避免误差突变尖峰)
+    // 微分项 (基于测量值变化率, D=0 时无效果)
     let derivative = 0;
     if (this.lastFaceSize > 0 && dt > 0) {
-      const dMeasurement = (facePixelSize - this.lastFaceSize) / dt;
-      derivative = -dMeasurement / this.targetSize;
+      derivative = -(facePixelSize - this.lastFaceSize) / dt / this.targetSize;
     }
     this.lastFaceSize = facePixelSize;
 
-    // PID 输出: zoom 调整因子
-    const adjustment = this.Kp * error + this.Ki * this.integralError + this.Kd * derivative;
-    const targetZoom = currentZoom * (1 + adjustment);
-
-    // Slew-rate 安全帽 (误差大→快追 30%, 误差小→精细 5%, 防 PID 异常)
-    const absError = Math.abs(error);
-    const slewRate = 0.05 + 0.25 * Math.min(absError, 1);
-    const maxDelta = Math.max(this.lastOutputZoom * slewRate, 0.05);
-    const delta = targetZoom - this.lastOutputZoom;
-    const clampedDelta = Math.max(-maxDelta, Math.min(maxDelta, delta));
-    const outputZoom = Math.max(minZoom, Math.min(maxZoom, this.lastOutputZoom + clampedDelta));
+    // PID: 固定增益, 纯线性组合, 无自适应/限速(增益恒定→环路稳定)
+    const P = this.Kp * error;
+    const I = this.Ki * this.integralError;
+    const D = this.Kd * derivative;
+    const adjustment = P + I + D;
+    const outputZoom = Math.max(minZoom, Math.min(maxZoom, currentZoom * (1 + adjustment)));
 
     this.lastOutputZoom = outputZoom;
-
-    // 调试信息 (console + on-screen overlay)
-    const dMeas = this.lastFaceSize > 0 ? (facePixelSize - this.lastFaceSize) / dt : 0;
     this.lastDebug = {
       faceW: facePixelSize, target: this.targetSize, error,
-      P: this.Kp * error, I: this.Ki * this.integralError, D: this.Kd * derivative,
-      dt, dMeasurement: dMeas, targetZoom, output: outputZoom, slewRate,
-      integral: this.integralError,
+      P, I, D, dt,
+      dMeasurement: this.lastFaceSize > 0 ? (facePixelSize - this.lastFaceSize) / dt : 0,
+      targetZoom: currentZoom * (1 + adjustment), output: outputZoom,
+      slewRate: 0, integral: this.integralError,
     };
     console.log(
       '[PID] dt=' + dt.toFixed(3) + ' faceW=' + facePixelSize.toFixed(1) +
-      ' tgt=' + this.targetSize.toFixed(1) + ' err=' + error.toFixed(4) +
-      ' P=' + (this.Kp * error).toFixed(4) + ' I=' + (this.Ki * this.integralError).toFixed(4) +
-      ' D=' + (this.Kd * derivative).toFixed(4) + ' dMeas=' + dMeas.toFixed(1) +
-      ' adj=' + adjustment.toFixed(4) + ' tgtZ=' + targetZoom.toFixed(3) +
-      ' slew=' + slewRate.toFixed(3) + ' out=' + outputZoom.toFixed(3)
+      ' err=' + error.toFixed(4) + ' P=' + P.toFixed(4) + ' I=' + I.toFixed(4) +
+      ' D=' + D.toFixed(4) + ' adj=' + adjustment.toFixed(4) + ' out=' + outputZoom.toFixed(3)
     );
 
     return outputZoom;

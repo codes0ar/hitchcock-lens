@@ -233,14 +233,14 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
       {/* === DEBUG 信息面板(on-screen overlay) === */}
       <View style={styles.debugOverlay} pointerEvents="none">
         <Text style={styles.debugText}>
-          <Text style={styles.debugTitle}>● DEBUG</Text>{'\n'}
+          <Text style={styles.debugTitle}>● DEBUG Kp:0.30 Ki:0.02 Kd:0.00</Text>{'\n'}
           lock:{isLocked ? 'Y' : 'N'} zoom:{displayZoom.toFixed(2)}x{'\n'}
           {faceDebug ? `eye:${faceDebug.eyeDist.toFixed(0)} avg:${faceDebug.avgMetric.toFixed(0)} bw:${faceDebug.boundsW.toFixed(0)} lm:${faceDebug.hasLandmark ? 'Y' : 'N'}` : 'no-face'}{'\n'}
           {debugInfo ? `tgt:${debugInfo.target.toFixed(0)} faceW:${debugInfo.faceW.toFixed(1)}` : ''}{'\n'}
-          {debugInfo ? `err:${debugInfo.error.toFixed(3)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
-          {debugInfo ? `P:${debugInfo.P.toFixed(3)} I:${debugInfo.I.toFixed(3)} D:${debugInfo.D.toFixed(3)}` : ''}{'\n'}
+          {debugInfo ? `err:${debugInfo.error.toFixed(4)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
+          {debugInfo ? `P:${debugInfo.P.toFixed(4)} I:${debugInfo.I.toFixed(4)} D:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
           {debugInfo ? `dMeas:${debugInfo.dMeasurement.toFixed(1)} intg:${debugInfo.integral.toFixed(3)}` : ''}{'\n'}
-          {debugInfo ? `tgtZ:${debugInfo.targetZoom.toFixed(2)} out:${debugInfo.output.toFixed(2)} slew:${debugInfo.slewRate.toFixed(2)}` : ''}
+          {debugInfo ? `out:${debugInfo.output.toFixed(3)}x` : ''}
         </Text>
       </View>
 
