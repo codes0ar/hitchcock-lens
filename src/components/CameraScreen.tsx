@@ -7,7 +7,7 @@
  * autoMode=true 使 bounds 直接为屏幕坐标，绿框无需手动映射。
  */
 
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -17,6 +17,8 @@ import {
   TouchableOpacity,
   Dimensions,
   ActivityIndicator,
+  PanResponder,
+  LayoutChangeEvent,
 } from 'react-native';
 import {
   Camera,
@@ -39,6 +41,7 @@ interface CameraScreenProps {
   device: CameraDevice | undefined;
   facing: CameraFacing;
   zoom: number;
+  zoomNormalized: number;
   isTorchOn: boolean;
   hasPermission: boolean;
   cameraReady: boolean;
@@ -49,6 +52,9 @@ interface CameraScreenProps {
   recordingStatus: RecordingStatus;
   onToggleRecording: () => void;
   displayZoom: number;
+  isLocked: boolean;
+  onToggleLock: () => void;
+  onManualZoom: (normalized: number) => void;
   onToggleFacing: () => void;
   onToggleFlash: () => void;
   settings: AppSettings;
@@ -61,6 +67,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
   device,
   facing,
   zoom,
+  zoomNormalized,
   isTorchOn,
   hasPermission,
   cameraReady,
@@ -71,6 +78,9 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
   recordingStatus,
   onToggleRecording,
   displayZoom,
+  isLocked,
+  onToggleLock,
+  onManualZoom,
   onToggleFacing,
   onToggleFlash,
   settings,
@@ -130,6 +140,15 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
     dx = Math.max(-maxDx, Math.min(maxDx, dx));
     dy = Math.max(-maxDy, Math.min(maxDy, dy));
   }
+
+  // 手动 zoom 滑块(解锁时可用): 触摸/拖动设定 zoom
+  const sliderHeightRef = useRef(0);
+  const onSliderTouch = (evt: { nativeEvent: { locationY: number } }) => {
+    if (sliderHeightRef.current <= 0) return;
+    const y = evt.nativeEvent.locationY;
+    const normalized = Math.max(0, Math.min(1, 1 - y / sliderHeightRef.current));
+    onManualZoom(normalized);
+  };
 
   if (!hasPermission) {
     return (
@@ -204,6 +223,15 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
             <Text style={styles.iconLabel}>{isTorchOn ? '开启' : '关闭'}</Text>
           </TouchableOpacity>
 
+          <TouchableOpacity style={styles.iconButton} onPress={onToggleLock} activeOpacity={0.7}>
+            <View style={[styles.iconContainer, isLocked && styles.iconContainerActive]}>
+              <Text style={styles.iconText}>{isLocked ? '🔒' : '🔓'}</Text>
+            </View>
+            <Text style={[styles.iconLabel, isLocked && styles.iconLabelActive]}>
+              {isLocked ? '已锁定' : '点击锁定'}
+            </Text>
+          </TouchableOpacity>
+
           {recordingStatus === 'recording' && (
             <View style={styles.recordingIndicator}>
               <View style={styles.recordingDot} />
@@ -219,6 +247,22 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* === 右侧手动 zoom 滑块(解锁时可用) === */}
+      {!isLocked && (
+        <View style={styles.zoomSlider} pointerEvents="box-none">
+          <Text style={styles.zoomSliderLabel}>{zoom.toFixed(1)}x</Text>
+          <View
+            style={styles.zoomSliderTrack}
+            onLayout={(e) => { sliderHeightRef.current = e.nativeEvent.layout.height; }}
+            onTouchStart={onSliderTouch}
+            onTouchMove={onSliderTouch}
+          >
+            <View style={[styles.zoomSliderFill, { height: `${Math.round(zoomNormalized * 100)}%` }]} />
+            <View style={[styles.zoomSliderHandle, { bottom: `${Math.round(zoomNormalized * 100)}%` }]} />
+          </View>
+        </View>
+      )}
 
       {/* === 中央: 人脸锁定指示器 === */}
       <View style={styles.centerOverlay} pointerEvents="none">
@@ -252,6 +296,8 @@ const styles = StyleSheet.create({
   iconText: { fontSize: 20 },
   iconTextActive: { color: '#FFD60A' },
   iconLabel: { color: '#fff', fontSize: 11, marginTop: 4, textShadowColor: 'rgba(0,0,0,0.6)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
+  iconLabelActive: { color: '#34C759' },
+  iconContainerActive: { backgroundColor: 'rgba(52, 199, 89, 0.3)', borderColor: '#34C759', borderWidth: 1 },
   recordingIndicator: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.5)', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16 },
   recordingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF3B30', marginRight: 6 },
   recordingText: { color: '#fff', fontSize: 13, fontWeight: '500' },
@@ -260,4 +306,9 @@ const styles = StyleSheet.create({
   centerReticle: { position: 'absolute', left: WIN_W / 2 - 15, top: WIN_H / 2 - 15, width: 30, height: 30, zIndex: 6 },
   reticleH: { position: 'absolute', left: 0, top: 14, width: 30, height: 2, backgroundColor: 'rgba(255,255,255,0.7)' },
   reticleV: { position: 'absolute', left: 14, top: 0, width: 2, height: 30, backgroundColor: 'rgba(255,255,255,0.7)' },
+  zoomSlider: { position: 'absolute', right: 16, top: 140, bottom: 140, width: 44, alignItems: 'center', zIndex: 8 },
+  zoomSliderLabel: { color: '#fff', fontSize: 12, fontWeight: '700', marginBottom: 6, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
+  zoomSliderTrack: { flex: 1, width: 28, backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', justifyContent: 'flex-end', overflow: 'hidden' },
+  zoomSliderFill: { width: '100%', backgroundColor: 'rgba(255,255,255,0.25)', position: 'absolute', bottom: 0 },
+  zoomSliderHandle: { width: 28, height: 4, backgroundColor: '#fff', position: 'absolute', borderRadius: 2 },
 });

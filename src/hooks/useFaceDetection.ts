@@ -113,6 +113,11 @@ export function useFaceDetection() {
     lockedFaceRef.current = null;
   }, []);
 
+  /** 解锁: 回到 detected 状态(脸还在, 但清除锁定, 允许手动重新调整) */
+  const unlock = useCallback(() => {
+    setLockStatus((prev) => (prev === 'locked' ? 'detected' : prev));
+  }, []);
+
   return {
     faces,
     lockStatus,
@@ -122,6 +127,7 @@ export function useFaceDetection() {
     imageDimensions: null, // autoMode=true 时 bounds 已是屏幕坐标，无需图像尺寸映射
     onFacesDetected,
     confirmLock,
+    unlock,
     reset,
   };
 }

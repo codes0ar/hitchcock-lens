@@ -7,7 +7,7 @@
  *     → [Camera.startRecording] 录像中实时变焦 = dolly-zoom
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Alert } from 'react-native';
 
 import type { AppSettings } from './src/types';
@@ -52,9 +52,10 @@ export default function App(): JSX.Element {
     primaryFaceBounds,
     onFacesDetected,
     confirmLock,
+    unlock,
   } = useFaceDetection();
 
-  const { displayZoom, isLocked } = useZoomControl({
+  const { displayZoom, isLocked, resetZoom } = useZoomControl({
     currentZoomRatio: getCurrentZoomRatio(),
     setNormalizedZoom,
     faceLockStatus: lockStatus,
@@ -99,12 +100,25 @@ export default function App(): JSX.Element {
 
   // 人脸检测到后自动确认锁定（记录初始人脸尺寸作为 dolly-zoom 目标）
   // 注意: 不依赖 primaryFaceWidth(每帧变会导致 timer 反复清除, 永远锁不上)
+  // 解锁后 2 秒内不自动重锁(给用户时间手动调整 zoom/构图)
+  const manualUnlockRef = useRef(0);
   useEffect(() => {
-    if (lockStatus === 'detected' && !isLocked) {
-      const timer = setTimeout(() => confirmLock(), 500);
+    if (lockStatus === 'detected' && !isLocked && Date.now() - manualUnlockRef.current > 2000) {
+      const timer = setTimeout(() => confirmLock(), 800);
       return () => clearTimeout(timer);
     }
   }, [lockStatus, isLocked, confirmLock]);
+
+  /** 手动锁定/解锁切换 */
+  const handleToggleLock = useCallback(() => {
+    if (isLocked) {
+      manualUnlockRef.current = Date.now();
+      resetZoom(); // 清除目标
+      unlock(); // lockStatus → detected, 允许手动调整
+    } else {
+      confirmLock(); // 锁定: 记录当前 faceW 为目标
+    }
+  }, [isLocked, resetZoom, unlock, confirmLock]);
 
   return (
     <CameraScreen
@@ -112,6 +126,7 @@ export default function App(): JSX.Element {
       device={device}
       facing={facing}
       zoom={zoomFactor}
+      zoomNormalized={_zoom}
       isTorchOn={isTorchOn}
       hasPermission={hasPermission}
       cameraReady={cameraReady}
@@ -122,6 +137,9 @@ export default function App(): JSX.Element {
       recordingStatus={recordingStatus}
       onToggleRecording={handleToggleRecording}
       displayZoom={displayZoom}
+      isLocked={isLocked}
+      onToggleLock={handleToggleLock}
+      onManualZoom={setNormalizedZoom}
       onToggleFacing={toggleFacing}
       onToggleFlash={toggleFlash}
       settings={settings}

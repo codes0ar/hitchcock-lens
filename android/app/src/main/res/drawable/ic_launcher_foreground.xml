@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 相机机身 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,42 L40,42 L44,36 L64,36 L68,42 L78,42 C80.2,42 82,43.8 82,46 L82,68 C82,70.2 80.2,72 78,72 L30,72 C27.8,72 26,70.2 26,68 L26,46 C26,43.8 27.8,42 30,42 Z"/>
+    <!-- 取景器凸起 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M46,36 L48,32 L60,32 L62,36 Z"/>
+    <!-- 镜头外圈(黑) -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M54,57 m-16,0 a16,16 0 1,0 32,0 a16,16 0 1,0 -32,0"/>
+    <!-- 镜头内圈(白) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,57 m-10,0 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0"/>
+    <!-- 镜头核心(黑) -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M54,57 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0"/>
+    <!-- dolly-zoom 放射线(4条, 表示背景拉伸) -->
+    <path android:fillColor="#FF3B30" android:pathData="M54,57 L70,41 L74,41 L74,45 Z"/>
+    <path android:fillColor="#FF3B30" android:pathData="M54,57 L38,41 L34,41 L34,45 Z"/>
+    <path android:fillColor="#FF3B30" android:pathData="M54,57 L70,73 L74,73 L74,69 Z"/>
+    <path android:fillColor="#FF3B30" android:pathData="M54,57 L38,73 L34,73 L34,69 Z"/>
+</vector>
