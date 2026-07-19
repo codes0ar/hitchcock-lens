@@ -18,7 +18,7 @@ import { CameraScreen } from './src/components/CameraScreen';
 
 const DEFAULT_SETTINGS: AppSettings = {
   sensitivity: 0.15,
-  smoothness: 0.3,
+  smoothness: 0.25,
 };
 
 export default function App(): JSX.Element {

@@ -140,10 +140,10 @@ export function useZoomControl({
       if (primaryFaceWidth <= 0) return;
       if (!controllerRef.current) return;
 
-      // deadzone 防抖: 相邻帧 faceW 变化 <3% 则跳过(消除 high-zoom 微抖动)
+      // deadzone 防抖: 相邻帧 faceW 变化 <1.5% 则跳过(消除 high-zoom 微抖, 不影响快速响应)
       const prevW = lastFaceWRef.current;
       lastFaceWRef.current = primaryFaceWidth;
-      if (prevW > 0 && Math.abs(primaryFaceWidth - prevW) / prevW < 0.03) return;
+      if (prevW > 0 && Math.abs(primaryFaceWidth - prevW) / prevW < 0.015) return;
 
       try {
         // 计算目标zoom倍数（用最新的 currentZoomRatio，避免 currentZoomRef 陈旧导致控制器收敛到错误均衡点）

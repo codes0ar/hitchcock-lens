@@ -16,8 +16,8 @@ import type { FaceData, FaceLockStatus } from '../types';
 const UI_THROTTLE_MS = 50;
 /** 人脸丢失容忍帧数 */
 const NO_FACE_TOLERANCE = 5;
-/** 人脸边界滑动平均窗口(防抖) */
-const SMOOTH_WINDOW = 5;
+/** 人脸边界滑动平均窗口(仅用于绿框/居中显示, 控制器用原始 faceW 无延迟) */
+const SMOOTH_WINDOW = 3;
 
 export function useFaceDetection() {
   const [faces, setFaces] = useState<FaceData[]>([]);
@@ -74,7 +74,7 @@ export function useFaceDetection() {
       if (a > maxArea) { maxArea = a; primary = valid[i]; }
     }
 
-    // 滑动平均平滑边界(防抖): 减少 high-zoom 下的框/zoom 抖动
+    // 滑动平均仅平滑边界(绿框/居中显示用); 控制器用原始 width 保证零延迟响应
     const hist = boundsHistoryRef.current;
     hist.push({ x: primary.bounds.x, y: primary.bounds.y, width: primary.bounds.width, height: primary.bounds.height });
     if (hist.length > SMOOTH_WINDOW) hist.shift();
@@ -85,8 +85,9 @@ export function useFaceDetection() {
     );
     const avg = { x: sum.x / n, y: sum.y / n, width: sum.width / n, height: sum.height / n };
 
-    setPrimaryFaceWidth(avg.width);
-    setPrimaryFaceHeight(avg.height);
+    // 控制器用原始 faceW(无 MA 延迟, 避免 overshoot); 显示用平滑 bounds
+    setPrimaryFaceWidth(primary.bounds.width);
+    setPrimaryFaceHeight(primary.bounds.height);
     setPrimaryFaceBounds(avg);
     lockedFaceRef.current = primary;
 
