@@ -146,7 +146,12 @@ export function useZoomControl({
       // 控制器每 100ms 才发一次命令, 确保每次都看到镜头稳定后的反馈
       // 否则 33ms 内连续命令会在镜头到达前累积 → 几何级数发散 → 振荡
       const now = Date.now();
-      if (now - lastControlTsRef.current < 100) return;
+      const elapsed = now - lastControlTsRef.current;
+      if (elapsed < 100) {
+        // DEBUG: 节流跳过
+        console.log('[Throttle] skip elapsed=' + elapsed + 'ms faceW=' + primaryFaceWidth.toFixed(1));
+        return;
+      }
       lastControlTsRef.current = now;
 
       try {
@@ -165,7 +170,7 @@ export function useZoomControl({
 
         setNormalizedZoom(normalizedZoom);
         setDisplayZoom(targetZoomRatio);
-        console.log('[useZoomControl] faceW=' + primaryFaceWidth + ' zoom=' + targetZoomRatio.toFixed(2) + 'x norm=' + normalizedZoom.toFixed(3));
+        console.log('[Ctrl] faceW=' + primaryFaceWidth.toFixed(1) + ' zoom=' + targetZoomRatio.toFixed(3) + 'x norm=' + normalizedZoom.toFixed(3) + ' curZ=' + currentZoomRatio.toFixed(3));
       } catch (error) {
         console.error('[useZoomControl] Zoom更新失败:', error);
       }

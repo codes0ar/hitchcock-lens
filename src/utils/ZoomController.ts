@@ -70,9 +70,9 @@ export class ZoomController {
   private options: ZoomControllerOptions;
 
   /** PID 增益 (dt≈0.1s, 100ms 执行器匹配节流) */
-  private readonly Kp = 0.8;  // 比例: 快速响应误差
-  private readonly Ki = 0.05; // 积分: 消除稳态偏差
-  private readonly Kd = 0.15; // 微分(基于测量值): 制动防过冲
+  private readonly Kp = 0.5;  // 比例: 适度响应(过高放大噪声)
+  private readonly Ki = 0.03; // 积分: 消除稳态偏差
+  private readonly Kd = 0.0;  // 微分: 设为0 — D-on-measurement 在噪声系统下放大振荡(详见分析)
 
   constructor(options: Partial<ZoomControllerOptions> = {}) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -184,6 +184,24 @@ export class ZoomController {
     const outputZoom = Math.max(minZoom, Math.min(maxZoom, this.lastOutputZoom + clampedDelta));
 
     this.lastOutputZoom = outputZoom;
+
+    // DEBUG: 全量 PID 诊断
+    console.log(
+      '[PID] dt=' + dt.toFixed(3) +
+      ' faceW=' + facePixelSize.toFixed(1) +
+      ' tgt=' + this.targetSize.toFixed(1) +
+      ' err=' + error.toFixed(4) +
+      ' P=' + (this.Kp * error).toFixed(4) +
+      ' I=' + (this.Ki * this.integralError).toFixed(4) +
+      ' D=' + (this.Kd * derivative).toFixed(4) +
+      ' dMeas=' + (this.lastFaceSize > 0 ? ((facePixelSize - this.lastFaceSize) / dt).toFixed(1) : '0') +
+      ' adj=' + adjustment.toFixed(4) +
+      ' tgtZ=' + targetZoom.toFixed(3) +
+      ' slew=' + slewRate.toFixed(3) +
+      ' maxD=' + maxDelta.toFixed(3) +
+      ' out=' + outputZoom.toFixed(3)
+    );
+
     return outputZoom;
   }
 

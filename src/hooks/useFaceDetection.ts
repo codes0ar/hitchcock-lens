@@ -33,8 +33,10 @@ export function useFaceDetection() {
   const lockedFaceRef = useRef<FaceData | null>(null);
   /** ref 跟踪当前是否有脸(confirmLock 用,避免依赖 faces state 导致 callback 重建) */
   const hasFacesRef = useRef(false);
-  /** 人脸边界滑动平均窗口(防抖: 平滑检测噪声, 减少 high-zoom 抖动) */
+  /** 人脸边界滑动平均窗口(仅用于绿框/居中显示, 控制器用原始 faceW 无延迟) */
   const boundsHistoryRef = useRef<Array<{ x: number; y: number; width: number; height: number }>>([]);
+  /** 眼距滑动平均窗口(控制器输入降噪, 3帧≈100ms 匹配执行器节流) */
+  const eyeDistHistoryRef = useRef<number[]>([]);
 
   /** 帧处理器回调（由 CameraScreen 的 frameProcessor 在每帧调用，经 runOnJS 派发） */
   const onFacesDetected = useCallback((detectedFaces: Face[]) => {
@@ -64,6 +66,7 @@ export function useFaceDetection() {
     if (valid.length === 0) {
       hasFacesRef.current = false;
       boundsHistoryRef.current = [];
+      eyeDistHistoryRef.current = [];
       noFaceCount.current += 1;
       if (noFaceCount.current >= NO_FACE_TOLERANCE) {
         setLockStatus('no-face');
@@ -96,9 +99,22 @@ export function useFaceDetection() {
     const avg = { x: sum.x / n, y: sum.y / n, width: sum.width / n, height: sum.height / n };
 
     // 控制器用眼距(更稳定), 无 landmark 时回退到 bounds width
-    const metric = primary.eyeDistance > 0 ? primary.eyeDistance : primary.bounds.width;
+    const rawMetric = primary.eyeDistance > 0 ? primary.eyeDistance : primary.bounds.width;
 
-    // 控制器用原始 metric(零延迟, 避免 overshoot); 显示用平滑 bounds
+    // 眼距 3帧 MA 降噪 (控制器输入, 100ms 窗口匹配执行器节流, 延迟可忽略)
+    const eHist = eyeDistHistoryRef.current;
+    eHist.push(rawMetric);
+    if (eHist.length > 3) eHist.shift();
+    const metric = eHist.reduce((a, b) => a + b, 0) / eHist.length;
+
+    // DEBUG: 眼距 vs bounds + landmark 状态
+    if (primary.eyeDistance > 0) {
+      console.log('[Face] eyeDist=' + primary.eyeDistance.toFixed(1) + ' avg=' + metric.toFixed(1) + ' boundsW=' + primary.bounds.width.toFixed(1) + ' ratio=' + (primary.bounds.width / primary.eyeDistance).toFixed(2));
+    } else {
+      console.log('[Face] NO_LANDMARK boundsW=' + primary.bounds.width.toFixed(1) + ' (fallback)');
+    }
+
+    // 控制器用降噪后 metric; 显示用平滑 bounds
     setPrimaryFaceWidth(metric);
     setPrimaryFaceHeight(primary.bounds.height);
     setPrimaryFaceBounds(avg);
