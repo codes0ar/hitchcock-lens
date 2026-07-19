@@ -27,6 +27,8 @@ export function useFaceDetection() {
   const [primaryFaceBounds, setPrimaryFaceBounds] = useState<{
     x: number; y: number; width: number; height: number;
   } | null>(null);
+  /** 人脸检测调试信息(on-screen overlay) */
+  const [faceDebug, setFaceDebug] = useState<{ eyeDist: number; avgMetric: number; boundsW: number; hasLandmark: boolean } | null>(null);
 
   const noFaceCount = useRef(0);
   const lastUiTs = useRef(0);
@@ -108,8 +110,14 @@ export function useFaceDetection() {
     const metric = eHist.reduce((a, b) => a + b, 0) / eHist.length;
 
     // DEBUG: 眼距 vs bounds + landmark 状态
+    setFaceDebug({
+      eyeDist: primary.eyeDistance,
+      avgMetric: metric,
+      boundsW: primary.bounds.width,
+      hasLandmark: primary.eyeDistance > 0,
+    });
     if (primary.eyeDistance > 0) {
-      console.log('[Face] eyeDist=' + primary.eyeDistance.toFixed(1) + ' avg=' + metric.toFixed(1) + ' boundsW=' + primary.bounds.width.toFixed(1) + ' ratio=' + (primary.bounds.width / primary.eyeDistance).toFixed(2));
+      console.log('[Face] eyeDist=' + primary.eyeDistance.toFixed(1) + ' avg=' + metric.toFixed(1) + ' boundsW=' + primary.bounds.width.toFixed(1));
     } else {
       console.log('[Face] NO_LANDMARK boundsW=' + primary.bounds.width.toFixed(1) + ' (fallback)');
     }
@@ -158,5 +166,6 @@ export function useFaceDetection() {
     confirmLock,
     unlock,
     reset,
+    faceDebug,
   };
 }

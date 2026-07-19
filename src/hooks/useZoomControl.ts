@@ -9,6 +9,7 @@ import { useRef, useCallback, useEffect, useState } from 'react';
 import {
   ZoomController,
   convertZoomToNormalized,
+  type PIDDebug,
 } from '../utils/ZoomController';
 import type { AppSettings, FaceLockStatus } from '../types';
 
@@ -65,6 +66,8 @@ export function useZoomControl({
   const [displayZoom, setDisplayZoom] = useState(1.0);
   /** 人脸锁定指示器是否显示 */
   const [showLockIndicator, setShowLockIndicator] = useState(false);
+  /** PID 调试信息(on-screen overlay) */
+  const [debugInfo, setDebugInfo] = useState<PIDDebug | null>(null);
 
   // 同步currentZoomRef
   useEffect(() => {
@@ -170,6 +173,9 @@ export function useZoomControl({
 
         setNormalizedZoom(normalizedZoom);
         setDisplayZoom(targetZoomRatio);
+        if (controllerRef.current?.lastDebug) {
+          setDebugInfo({ ...controllerRef.current.lastDebug });
+        }
         console.log('[Ctrl] faceW=' + primaryFaceWidth.toFixed(1) + ' zoom=' + targetZoomRatio.toFixed(3) + 'x norm=' + normalizedZoom.toFixed(3) + ' curZ=' + currentZoomRatio.toFixed(3));
       } catch (error) {
         console.error('[useZoomControl] Zoom更新失败:', error);
@@ -244,6 +250,7 @@ export function useZoomControl({
   return {
     displayZoom,
     showLockIndicator,
+    debugInfo,
     resetZoom,
     setTargetSize,
     isLocked: controllerRef.current?.isLocked() ?? false,

@@ -53,9 +53,10 @@ export default function App(): JSX.Element {
     onFacesDetected,
     confirmLock,
     unlock,
+    faceDebug,
   } = useFaceDetection();
 
-  const { displayZoom, isLocked, resetZoom } = useZoomControl({
+  const { displayZoom, isLocked, debugInfo, resetZoom } = useZoomControl({
     currentZoomRatio: getCurrentZoomRatio(),
     setNormalizedZoom,
     faceLockStatus: lockStatus,
@@ -140,6 +141,8 @@ export default function App(): JSX.Element {
       isLocked={isLocked}
       onToggleLock={handleToggleLock}
       onManualZoom={setNormalizedZoom}
+      debugInfo={debugInfo}
+      faceDebug={faceDebug}
       onToggleFacing={toggleFacing}
       onToggleFlash={toggleFlash}
       settings={settings}

@@ -7,6 +7,22 @@
 
 import type { ZoomControllerOptions } from '../types';
 
+/** PID 调试信息(供 on-screen debug overlay 显示) */
+export interface PIDDebug {
+  faceW: number;
+  target: number;
+  error: number;
+  P: number;
+  I: number;
+  D: number;
+  dt: number;
+  dMeasurement: number;
+  targetZoom: number;
+  output: number;
+  slewRate: number;
+  integral: number;
+}
+
 /** 默认控制参数 */
 const DEFAULT_OPTIONS: ZoomControllerOptions = {
   minZoom: 1.0,
@@ -70,9 +86,12 @@ export class ZoomController {
   private options: ZoomControllerOptions;
 
   /** PID 增益 (dt≈0.1s, 100ms 执行器匹配节流) */
-  private readonly Kp = 0.5;  // 比例: 适度响应(过高放大噪声)
-  private readonly Ki = 0.03; // 积分: 消除稳态偏差
-  private readonly Kd = 0.0;  // 微分: 设为0 — D-on-measurement 在噪声系统下放大振荡(详见分析)
+  private readonly Kp = 0.3;  // 比例: 保守(降低噪声放大)
+  private readonly Ki = 0.02; // 积分: 消除稳态偏差
+  private readonly Kd = 0.0;  // 微分: 设为0 — D-on-measurement 在噪声系统下放大振荡
+
+  /** 上次 update 的调试信息(on-screen overlay 用) */
+  public lastDebug: PIDDebug | null = null;
 
   constructor(options: Partial<ZoomControllerOptions> = {}) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -185,21 +204,21 @@ export class ZoomController {
 
     this.lastOutputZoom = outputZoom;
 
-    // DEBUG: 全量 PID 诊断
+    // 调试信息 (console + on-screen overlay)
+    const dMeas = this.lastFaceSize > 0 ? (facePixelSize - this.lastFaceSize) / dt : 0;
+    this.lastDebug = {
+      faceW: facePixelSize, target: this.targetSize, error,
+      P: this.Kp * error, I: this.Ki * this.integralError, D: this.Kd * derivative,
+      dt, dMeasurement: dMeas, targetZoom, output: outputZoom, slewRate,
+      integral: this.integralError,
+    };
     console.log(
-      '[PID] dt=' + dt.toFixed(3) +
-      ' faceW=' + facePixelSize.toFixed(1) +
-      ' tgt=' + this.targetSize.toFixed(1) +
-      ' err=' + error.toFixed(4) +
-      ' P=' + (this.Kp * error).toFixed(4) +
-      ' I=' + (this.Ki * this.integralError).toFixed(4) +
-      ' D=' + (this.Kd * derivative).toFixed(4) +
-      ' dMeas=' + (this.lastFaceSize > 0 ? ((facePixelSize - this.lastFaceSize) / dt).toFixed(1) : '0') +
-      ' adj=' + adjustment.toFixed(4) +
-      ' tgtZ=' + targetZoom.toFixed(3) +
-      ' slew=' + slewRate.toFixed(3) +
-      ' maxD=' + maxDelta.toFixed(3) +
-      ' out=' + outputZoom.toFixed(3)
+      '[PID] dt=' + dt.toFixed(3) + ' faceW=' + facePixelSize.toFixed(1) +
+      ' tgt=' + this.targetSize.toFixed(1) + ' err=' + error.toFixed(4) +
+      ' P=' + (this.Kp * error).toFixed(4) + ' I=' + (this.Ki * this.integralError).toFixed(4) +
+      ' D=' + (this.Kd * derivative).toFixed(4) + ' dMeas=' + dMeas.toFixed(1) +
+      ' adj=' + adjustment.toFixed(4) + ' tgtZ=' + targetZoom.toFixed(3) +
+      ' slew=' + slewRate.toFixed(3) + ' out=' + outputZoom.toFixed(3)
     );
 
     return outputZoom;

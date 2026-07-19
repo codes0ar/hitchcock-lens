@@ -29,6 +29,7 @@ import { useRunOnJS } from 'react-native-worklets-core';
 import { useFaceDetector, type Face, type FrameFaceDetectionOptions } from 'react-native-vision-camera-face-detector';
 
 import type { FaceLockStatus, RecordingStatus, AppSettings, CameraFacing } from '../types';
+import type { PIDDebug } from '../utils/ZoomController';
 import { RecordButton } from './RecordButton';
 import { FaceLockIndicator } from './FaceLockIndicator';
 import { ZoomDisplay } from './ZoomDisplay';
@@ -55,6 +56,8 @@ interface CameraScreenProps {
   isLocked: boolean;
   onToggleLock: () => void;
   onManualZoom: (normalized: number) => void;
+  debugInfo: PIDDebug | null;
+  faceDebug: { eyeDist: number; avgMetric: number; boundsW: number; hasLandmark: boolean } | null;
   onToggleFacing: () => void;
   onToggleFlash: () => void;
   settings: AppSettings;
@@ -81,6 +84,8 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
   isLocked,
   onToggleLock,
   onManualZoom,
+  debugInfo,
+  faceDebug,
   onToggleFacing,
   onToggleFlash,
   settings,
@@ -225,6 +230,20 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
         </View>
       )}
 
+      {/* === DEBUG 信息面板(on-screen overlay) === */}
+      <View style={styles.debugOverlay} pointerEvents="none">
+        <Text style={styles.debugText}>
+          <Text style={styles.debugTitle}>● DEBUG</Text>{'\n'}
+          lock:{isLocked ? 'Y' : 'N'} zoom:{displayZoom.toFixed(2)}x{'\n'}
+          {faceDebug ? `eye:${faceDebug.eyeDist.toFixed(0)} avg:${faceDebug.avgMetric.toFixed(0)} bw:${faceDebug.boundsW.toFixed(0)} lm:${faceDebug.hasLandmark ? 'Y' : 'N'}` : 'no-face'}{'\n'}
+          {debugInfo ? `tgt:${debugInfo.target.toFixed(0)} faceW:${debugInfo.faceW.toFixed(1)}` : ''}{'\n'}
+          {debugInfo ? `err:${debugInfo.error.toFixed(3)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
+          {debugInfo ? `P:${debugInfo.P.toFixed(3)} I:${debugInfo.I.toFixed(3)} D:${debugInfo.D.toFixed(3)}` : ''}{'\n'}
+          {debugInfo ? `dMeas:${debugInfo.dMeasurement.toFixed(1)} intg:${debugInfo.integral.toFixed(3)}` : ''}{'\n'}
+          {debugInfo ? `tgtZ:${debugInfo.targetZoom.toFixed(2)} out:${debugInfo.output.toFixed(2)} slew:${debugInfo.slewRate.toFixed(2)}` : ''}
+        </Text>
+      </View>
+
       {/* === 顶部工具栏 === */}
       <View style={styles.topBar} pointerEvents="box-none">
         <View style={styles.topBarContent}>
@@ -323,4 +342,7 @@ const styles = StyleSheet.create({
   zoomSliderTrack: { flex: 1, width: 28, backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', justifyContent: 'flex-end', overflow: 'hidden' },
   zoomSliderFill: { width: '100%', backgroundColor: 'rgba(255,255,255,0.25)', position: 'absolute', bottom: 0 },
   zoomSliderHandle: { width: 28, height: 4, backgroundColor: '#fff', position: 'absolute', borderRadius: 2 },
+  debugOverlay: { position: 'absolute', left: 8, top: 60, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, zIndex: 20, maxWidth: 240 },
+  debugText: { color: '#0F0', fontSize: 10, fontFamily: 'monospace', lineHeight: 13 },
+  debugTitle: { color: '#FF0', fontSize: 10, fontFamily: 'monospace', fontWeight: '700' },
 });
