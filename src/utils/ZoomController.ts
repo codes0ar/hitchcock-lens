@@ -122,55 +122,40 @@ export class ZoomController {
   }
 
   /**
-   * 核心控制算法 — 根据人脸尺寸偏差计算目标zoom
+   * 核心控制算法 — 自适应 slew-rate 限速器(替换 EMA, 消除指数迟滞)
    *
    * @param facePixelSize - 当前检测到的人脸像素宽度
    * @param currentZoom - 当前摄像头zoom值（zoom倍数，非归一化值）
    * @returns 目标zoom倍数（非归一化），未设置targetSize时返回currentZoom
    *
-   * 算法步骤:
-   * 1. 计算偏差比例: error = targetSize / facePixelSize
-   *    - error > 1: 人脸比目标小，需要增大zoom
-   *    - error < 1: 人脸比目标大，需要减小zoom
-   * 2. 比例控制: correctedZoom = currentZoom * error
-   * 3. EMA平滑: output = lastOutput + (correctedZoom - lastOutput) * smoothingFactor
-   * 4. 限幅: clamp(output, minZoom, maxZoom)
+   * 算法:
+   * 1. 精确目标: targetZoom = currentZoom * (targetSize / facePixelSize)  [一步到位解]
+   * 2. 自适应限速: 误差大→30%/步(快追), 误差小→4%/步(抑抖)
+   * 3. 线性逼近: output = lastOutput + clamp(delta, ±maxDelta)
+   *
+   * vs EMA: 线性收敛(非指数), 大误差时快 3-5 倍; 限速 cap 防止噪声放大(无 overshoot)
    */
   public update(facePixelSize: number, currentZoom: number): number {
-    // 未设置目标尺寸时，无法计算zoom调整
-    if (this.targetSize === null) {
-      return currentZoom;
-    }
+    if (this.targetSize === null) return currentZoom;
+    if (facePixelSize <= 0) return this.lastOutputZoom;
 
-    // 人脸尺寸无效时的保护
-    if (facePixelSize <= 0) {
-      return this.lastOutputZoom;
-    }
+    const { minZoom, maxZoom } = this.options;
 
-    const { minZoom, maxZoom, smoothingFactor } = this.options;
+    // 步骤1: 精确目标 zoom
+    const errorRatio = this.targetSize / facePixelSize;
+    const targetZoom = currentZoom * errorRatio;
 
-    // 步骤1: 计算偏差比例
-    // 如果人脸比目标小(facePixelSize < targetSize)，error > 1，需要zoom in
-    // 如果人脸比目标大(facePixelSize > targetSize)，error < 1，需要zoom out
-    const error = this.targetSize / facePixelSize;
+    // 步骤2: 自适应 slew rate (误差大→快追, 误差小→精细抑抖)
+    const absError = Math.abs(errorRatio - 1);
+    const slewRate = 0.04 + 0.26 * Math.min(absError, 1);
+    const maxDelta = Math.max(this.lastOutputZoom * slewRate, 0.05);
 
-    // 步骤2: 比例控制
-    // 根据误差直接调整zoom
-    const correctedZoom = currentZoom * error;
+    // 步骤3: 限速线性逼近目标(单调收敛, 无 overshoot)
+    const delta = targetZoom - this.lastOutputZoom;
+    const clampedDelta = Math.max(-maxDelta, Math.min(maxDelta, delta));
+    const outputZoom = Math.max(minZoom, Math.min(maxZoom, this.lastOutputZoom + clampedDelta));
 
-    // 步骤3: EMA（指数移动平均）平滑，防止抖动
-    // 使用smoothingFactor控制响应速度和平滑度
-    // smoothingFactor越大，响应越快但可能抖动；越小越平滑但延迟越大
-    const alpha = Math.max(0.01, Math.min(1.0, smoothingFactor));
-    const smoothedZoom =
-      this.lastOutputZoom + (correctedZoom - this.lastOutputZoom) * alpha;
-
-    // 步骤4: 限幅保护，确保zoom在设备支持范围内
-    const outputZoom = Math.max(minZoom, Math.min(maxZoom, smoothedZoom));
-
-    // 保存本次输出用于下一帧EMA
     this.lastOutputZoom = outputZoom;
-
     return outputZoom;
   }
 

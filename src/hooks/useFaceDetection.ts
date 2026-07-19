@@ -12,8 +12,8 @@ import { useState, useCallback, useRef } from 'react';
 import type { Face } from 'react-native-vision-camera-face-detector';
 import type { FaceData, FaceLockStatus } from '../types';
 
-/** UI 状态更新节流间隔（ms）。帧处理器 30fps，50ms≈20fps 兼顾响应与省电 */
-const UI_THROTTLE_MS = 50;
+/** UI 状态更新节流间隔（ms）。33ms≈30fps, 兼顾响应速度与 React state 开销 */
+const UI_THROTTLE_MS = 33;
 /** 人脸丢失容忍帧数 */
 const NO_FACE_TOLERANCE = 5;
 /** 人脸边界滑动平均窗口(仅用于绿框/居中显示, 控制器用原始 faceW 无延迟) */

@@ -7,7 +7,7 @@
  * autoMode=true 使 bounds 直接为屏幕坐标，绿框无需手动映射。
  */
 
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -125,21 +125,33 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
     [detector, sendFacesToJs]
   );
 
-  // 自动居中: 高倍数时数字平移 Camera 使人脸居中(zoom≤1 时不裁剪保持画质)
-  const centeringGain = Math.max(0, Math.min(1, (zoom - 1) / 3)); // 0@1x, 1@4x+
-  const centerScale = 1 + 0.15 * centeringGain;
-  let dx = 0;
-  let dy = 0;
-  if (faceBounds && faceBounds.width > 0 && centeringGain > 0) {
-    const fx = faceBounds.x + faceBounds.width / 2;
-    const fy = faceBounds.y + faceBounds.height / 2;
-    dx = -centerScale * (fx - WIN_W / 2) * centeringGain;
-    dy = -centerScale * (fy - WIN_H / 2) * centeringGain;
-    const maxDx = WIN_W * 0.07 * centeringGain;
-    const maxDy = WIN_H * 0.07 * centeringGain;
-    dx = Math.max(-maxDx, Math.min(maxDx, dx));
-    dy = Math.max(-maxDy, Math.min(maxDy, dy));
-  }
+  // 自动居中: EMA 平滑偏移, 高倍数时数字平移保持人脸居中(zoom≤1 时不裁剪)
+  const [center, setCenter] = useState({ scale: 1, dx: 0, dy: 0, gain: 0 });
+  const smoothDxRef = useRef(0);
+  const smoothDyRef = useRef(0);
+  useEffect(() => {
+    const gain = Math.max(0, Math.min(1, (zoom - 1) / 3)); // 0@1x, 1@4x+
+    const scale = 1 + 0.15 * gain;
+    let tdx = 0;
+    let tdy = 0;
+    if (faceBounds && faceBounds.width > 0 && gain > 0) {
+      const fx = faceBounds.x + faceBounds.width / 2;
+      const fy = faceBounds.y + faceBounds.height / 2;
+      tdx = -scale * (fx - WIN_W / 2) * gain;
+      tdy = -scale * (fy - WIN_H / 2) * gain;
+      const maxDx = WIN_W * 0.07 * gain;
+      const maxDy = WIN_H * 0.07 * gain;
+      tdx = Math.max(-maxDx, Math.min(maxDx, tdx));
+      tdy = Math.max(-maxDy, Math.min(maxDy, tdy));
+    } else {
+      smoothDxRef.current = 0;
+      smoothDyRef.current = 0;
+    }
+    // EMA 平滑(0.2/帧): 抑制 high-zoom 检测噪声导致的中心抖动
+    smoothDxRef.current += (tdx - smoothDxRef.current) * 0.2;
+    smoothDyRef.current += (tdy - smoothDyRef.current) * 0.2;
+    setCenter({ scale, dx: smoothDxRef.current, dy: smoothDyRef.current, gain });
+  }, [faceBounds, zoom]);
 
   // 手动 zoom 滑块(解锁时可用): 触摸/拖动设定 zoom
   const sliderHeightRef = useRef(0);
@@ -172,7 +184,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
       {device ? (
         <Camera
           ref={cameraRef as React.RefObject<Camera>}
-          style={[styles.camera, { transform: [{ scale: centerScale }, { translateX: dx }, { translateY: dy }] }]}
+          style={[styles.camera, { transform: [{ scale: center.scale }, { translateX: center.dx }, { translateY: center.dy }] }]}
           device={device}
           isActive
           zoom={zoom}
@@ -206,7 +218,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
       )}
 
       {/* === 中心准星(自动居中激活时显示) === */}
-      {centeringGain > 0 && (
+      {center.gain > 0 && (
         <View style={styles.centerReticle} pointerEvents="none">
           <View style={styles.reticleH} />
           <View style={styles.reticleV} />
