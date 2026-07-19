@@ -55,6 +55,8 @@ export function useZoomControl({
   const targetSetRef = useRef(false);
   /** 当前zoom倍数的引用（用于ZoomController.update） */
   const currentZoomRef = useRef(currentZoomRatio);
+  /** 上一帧 faceW(deadzone 防抖: 变化<3% 不更新 zoom, 消除 high-zoom 微抖) */
+  const lastFaceWRef = useRef(0);
 
   // === 状态 ===
   /** 当前显示给用户的zoom倍数 */
@@ -118,6 +120,7 @@ export function useZoomControl({
     // 人脸丢失：保持目标参考不变，zoom 维持上一次值
     if (currentStatus === 'no-face') {
       setShowLockIndicator(false);
+      lastFaceWRef.current = 0;
     }
 
     lastLockStatusRef.current = currentStatus;
@@ -136,6 +139,11 @@ export function useZoomControl({
     ) {
       if (primaryFaceWidth <= 0) return;
       if (!controllerRef.current) return;
+
+      // deadzone 防抖: 相邻帧 faceW 变化 <3% 则跳过(消除 high-zoom 微抖动)
+      const prevW = lastFaceWRef.current;
+      lastFaceWRef.current = primaryFaceWidth;
+      if (prevW > 0 && Math.abs(primaryFaceWidth - prevW) / prevW < 0.03) return;
 
       try {
         // 计算目标zoom倍数（用最新的 currentZoomRatio，避免 currentZoomRef 陈旧导致控制器收敛到错误均衡点）

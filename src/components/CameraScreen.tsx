@@ -115,6 +115,22 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
     [detector, sendFacesToJs]
   );
 
+  // 自动居中: 高倍数时数字平移 Camera 使人脸居中(zoom≤1 时不裁剪保持画质)
+  const centeringGain = Math.max(0, Math.min(1, (zoom - 1) / 3)); // 0@1x, 1@4x+
+  const centerScale = 1 + 0.15 * centeringGain;
+  let dx = 0;
+  let dy = 0;
+  if (faceBounds && faceBounds.width > 0 && centeringGain > 0) {
+    const fx = faceBounds.x + faceBounds.width / 2;
+    const fy = faceBounds.y + faceBounds.height / 2;
+    dx = -centerScale * (fx - WIN_W / 2) * centeringGain;
+    dy = -centerScale * (fy - WIN_H / 2) * centeringGain;
+    const maxDx = WIN_W * 0.07 * centeringGain;
+    const maxDy = WIN_H * 0.07 * centeringGain;
+    dx = Math.max(-maxDx, Math.min(maxDx, dx));
+    dy = Math.max(-maxDy, Math.min(maxDy, dy));
+  }
+
   if (!hasPermission) {
     return (
       <View style={styles.permissionContainer}>
@@ -137,7 +153,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
       {device ? (
         <Camera
           ref={cameraRef as React.RefObject<Camera>}
-          style={styles.camera}
+          style={[styles.camera, { transform: [{ scale: centerScale }, { translateX: dx }, { translateY: dy }] }]}
           device={device}
           isActive
           zoom={zoom}
@@ -168,6 +184,14 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
             zIndex: 4,
           }}
         />
+      )}
+
+      {/* === 中心准星(自动居中激活时显示) === */}
+      {centeringGain > 0 && (
+        <View style={styles.centerReticle} pointerEvents="none">
+          <View style={styles.reticleH} />
+          <View style={styles.reticleV} />
+        </View>
       )}
 
       {/* === 顶部工具栏 === */}
@@ -212,7 +236,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
+  container: { flex: 1, backgroundColor: '#000', overflow: 'hidden' },
   camera: { ...StyleSheet.absoluteFillObject, flex: 1 },
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { color: '#fff', marginTop: 12 },
@@ -233,4 +257,7 @@ const styles = StyleSheet.create({
   recordingText: { color: '#fff', fontSize: 13, fontWeight: '500' },
   centerOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', zIndex: 5 },
   bottomControls: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingBottom: 40, paddingHorizontal: 20, zIndex: 10, alignItems: 'center' },
+  centerReticle: { position: 'absolute', left: WIN_W / 2 - 15, top: WIN_H / 2 - 15, width: 30, height: 30, zIndex: 6 },
+  reticleH: { position: 'absolute', left: 0, top: 14, width: 30, height: 2, backgroundColor: 'rgba(255,255,255,0.7)' },
+  reticleV: { position: 'absolute', left: 14, top: 0, width: 2, height: 30, backgroundColor: 'rgba(255,255,255,0.7)' },
 });

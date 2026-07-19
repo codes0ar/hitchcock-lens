@@ -12,10 +12,12 @@ import { useState, useCallback, useRef } from 'react';
 import type { Face } from 'react-native-vision-camera-face-detector';
 import type { FaceData, FaceLockStatus } from '../types';
 
-/** UI 状态更新节流间隔（ms）。帧处理器 30fps，但 React state ~10fps 足够且更省 */
-const UI_THROTTLE_MS = 100;
+/** UI 状态更新节流间隔（ms）。帧处理器 30fps，50ms≈20fps 兼顾响应与省电 */
+const UI_THROTTLE_MS = 50;
 /** 人脸丢失容忍帧数 */
 const NO_FACE_TOLERANCE = 5;
+/** 人脸边界滑动平均窗口(防抖) */
+const SMOOTH_WINDOW = 5;
 
 export function useFaceDetection() {
   const [faces, setFaces] = useState<FaceData[]>([]);
@@ -29,6 +31,10 @@ export function useFaceDetection() {
   const noFaceCount = useRef(0);
   const lastUiTs = useRef(0);
   const lockedFaceRef = useRef<FaceData | null>(null);
+  /** ref 跟踪当前是否有脸(confirmLock 用,避免依赖 faces state 导致 callback 重建) */
+  const hasFacesRef = useRef(false);
+  /** 人脸边界滑动平均窗口(防抖: 平滑检测噪声, 减少 high-zoom 抖动) */
+  const boundsHistoryRef = useRef<Array<{ x: number; y: number; width: number; height: number }>>([]);
 
   /** 帧处理器回调（由 CameraScreen 的 frameProcessor 在每帧调用，经 runOnJS 派发） */
   const onFacesDetected = useCallback((detectedFaces: Face[]) => {
@@ -46,6 +52,8 @@ export function useFaceDetection() {
     setFaces(valid);
 
     if (valid.length === 0) {
+      hasFacesRef.current = false;
+      boundsHistoryRef.current = [];
       noFaceCount.current += 1;
       if (noFaceCount.current >= NO_FACE_TOLERANCE) {
         setLockStatus('no-face');
@@ -58,6 +66,7 @@ export function useFaceDetection() {
     }
 
     noFaceCount.current = 0;
+    hasFacesRef.current = true;
     let primary = valid[0];
     let maxArea = primary.bounds.width * primary.bounds.height;
     for (let i = 1; i < valid.length; i++) {
@@ -65,17 +74,33 @@ export function useFaceDetection() {
       if (a > maxArea) { maxArea = a; primary = valid[i]; }
     }
 
-    setPrimaryFaceWidth(primary.bounds.width);
-    setPrimaryFaceHeight(primary.bounds.height);
-    setPrimaryFaceBounds({ ...primary.bounds });
+    // 滑动平均平滑边界(防抖): 减少 high-zoom 下的框/zoom 抖动
+    const hist = boundsHistoryRef.current;
+    hist.push({ x: primary.bounds.x, y: primary.bounds.y, width: primary.bounds.width, height: primary.bounds.height });
+    if (hist.length > SMOOTH_WINDOW) hist.shift();
+    const n = hist.length;
+    const sum = hist.reduce(
+      (a, b) => ({ x: a.x + b.x, y: a.y + b.y, width: a.width + b.width, height: a.height + b.height }),
+      { x: 0, y: 0, width: 0, height: 0 }
+    );
+    const avg = { x: sum.x / n, y: sum.y / n, width: sum.width / n, height: sum.height / n };
+
+    setPrimaryFaceWidth(avg.width);
+    setPrimaryFaceHeight(avg.height);
+    setPrimaryFaceBounds(avg);
     lockedFaceRef.current = primary;
 
     setLockStatus((prev) => (prev === 'no-face' ? 'detected' : prev));
   }, []);
 
   const confirmLock = useCallback(() => {
-    if (faces.length > 0) setLockStatus('locked');
-  }, [faces.length]);
+    if (hasFacesRef.current) {
+      console.log('[useFaceDetection] confirmLock → locked');
+      setLockStatus('locked');
+    } else {
+      console.log('[useFaceDetection] confirmLock 时无人脸, 跳过');
+    }
+  }, []);
 
   const reset = useCallback(() => {
     setFaces([]);

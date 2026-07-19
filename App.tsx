@@ -18,7 +18,7 @@ import { CameraScreen } from './src/components/CameraScreen';
 
 const DEFAULT_SETTINGS: AppSettings = {
   sensitivity: 0.15,
-  smoothness: 0.15,
+  smoothness: 0.3,
 };
 
 export default function App(): JSX.Element {
@@ -30,7 +30,8 @@ export default function App(): JSX.Element {
     hasPermission,
     requestAllPermissions,
     facing,
-    zoom,
+    zoom: _zoom,
+    zoomFactor,
     isTorchOn,
     recordingStatus,
     minZoomRatio,
@@ -97,19 +98,20 @@ export default function App(): JSX.Element {
   }, [requestAllPermissions]);
 
   // 人脸检测到后自动确认锁定（记录初始人脸尺寸作为 dolly-zoom 目标）
+  // 注意: 不依赖 primaryFaceWidth(每帧变会导致 timer 反复清除, 永远锁不上)
   useEffect(() => {
-    if (lockStatus === 'detected' && primaryFaceWidth > 0 && !isLocked) {
+    if (lockStatus === 'detected' && !isLocked) {
       const timer = setTimeout(() => confirmLock(), 500);
       return () => clearTimeout(timer);
     }
-  }, [lockStatus, primaryFaceWidth, isLocked, confirmLock]);
+  }, [lockStatus, isLocked, confirmLock]);
 
   return (
     <CameraScreen
       cameraRef={cameraRef}
       device={device}
       facing={facing}
-      zoom={zoom}
+      zoom={zoomFactor}
       isTorchOn={isTorchOn}
       hasPermission={hasPermission}
       cameraReady={cameraReady}

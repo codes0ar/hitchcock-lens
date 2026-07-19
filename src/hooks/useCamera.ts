@@ -33,7 +33,7 @@ export function useCamera() {
   const [mediaPermission, requestMediaPermission] =
     MediaLibrary.usePermissions();
 
-  const [zoom, setZoom] = useState(0); // 归一化 [0,1]，0=1x，1=maxZoom
+  const [zoom, setZoom] = useState(0); // 归一化 [0,1]，0=1x，1=maxZoom（内部状态/控制器用）
   const [flashMode, setFlashMode] = useState<'off' | 'on' | 'auto'>('off');
   const [isTorchOn, setIsTorchOn] = useState(false);
   const [recordingStatus, setRecordingStatus] =
@@ -43,14 +43,21 @@ export function useCamera() {
   // 设备 zoom 范围（vision-camera device.maxZoom 是最大倍数；capped 控制器上限）
   const [minZoomRatio, setMinZoomRatio] = useState(1.0);
   const [maxZoomRatio, setMaxZoomRatio] = useState(10.0);
+  /** 传给 vision-camera Camera.zoom 的实际倍数(v4 zoom prop 是倍数不是归一化!) */
+  const zoomFactor = minZoomRatio + zoom * (maxZoomRatio - minZoomRatio);
 
-  // 设备变化时更新 zoom 上限
+  // 设备变化时更新 zoom 范围(minZoom 可能 <1.0 超广角, maxZoom 上限 15 防止过大)
   useEffect(() => {
     if (device) {
+      const devMin = typeof device.minZoom === 'number' && device.minZoom > 0
+        ? device.minZoom
+        : 1.0;
       const devMax = typeof device.maxZoom === 'number' && device.maxZoom > 1
         ? Math.min(device.maxZoom, 15)
         : 10.0;
+      setMinZoomRatio(devMin);
       setMaxZoomRatio(devMax);
+      console.log('[useCamera] 设备 zoom 范围: min=' + devMin + ' max=' + devMax + ' neutral=' + (device.neutralZoom ?? 1.0));
     }
   }, [device]);
 
@@ -194,6 +201,7 @@ export function useCamera() {
     facing,
     flashMode,
     zoom,
+    zoomFactor,
     isTorchOn,
     recordingStatus,
     minZoomRatio,
