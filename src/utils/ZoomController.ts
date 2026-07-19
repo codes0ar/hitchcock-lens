@@ -56,12 +56,23 @@ export function convertNormalizedToZoom(
  *   outputZoom = clamp(correctedZoom, minZoom, maxZoom)
  */
 export class ZoomController {
-  /** 目标人脸像素宽度（首次检测到时记录） */
+  /** 目标人脸像素宽度（首次检测到时记录, 优先用眼距） */
   private targetSize: number | null = null;
-  /** 上一次的输出zoom值（用于EMA平滑） */
+  /** 上一次的输出zoom值（用于 slew-rate 限速） */
   private lastOutputZoom: number = 1.0;
+  /** PID 积分项累积 */
+  private integralError: number = 0;
+  /** 上一次的测量值(用于 D-on-measurement, 避免 setpoint 尖峰) */
+  private lastFaceSize: number = 0;
+  /** 上一次更新时间戳(ms, 用于计算 dt) */
+  private lastUpdateTime: number = 0;
   /** 控制器配置选项 */
   private options: ZoomControllerOptions;
+
+  /** PID 增益 (dt≈0.1s, 100ms 执行器匹配节流) */
+  private readonly Kp = 0.8;  // 比例: 快速响应误差
+  private readonly Ki = 0.05; // 积分: 消除稳态偏差
+  private readonly Kd = 0.15; // 微分(基于测量值): 制动防过冲
 
   constructor(options: Partial<ZoomControllerOptions> = {}) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -104,6 +115,9 @@ export class ZoomController {
   public reset(): void {
     this.targetSize = null;
     this.lastOutputZoom = this.options.minZoom;
+    this.integralError = 0;
+    this.lastFaceSize = 0;
+    this.lastUpdateTime = 0;
   }
 
   /**
@@ -122,35 +136,49 @@ export class ZoomController {
   }
 
   /**
-   * 核心控制算法 — 自适应 slew-rate 限速器(替换 EMA, 消除指数迟滞)
+   * PID 控制算法 — P(快速响应) + I(稳态精度) + D(制动防过冲)
    *
-   * @param facePixelSize - 当前检测到的人脸像素宽度
-   * @param currentZoom - 当前摄像头zoom值（zoom倍数，非归一化值）
-   * @returns 目标zoom倍数（非归一化），未设置targetSize时返回currentZoom
+   * D 项基于测量值(faceW 变化率)而非误差, 避免 setpoint 突变时的微分尖峰。
+   * 外层套 slew-rate 安全帽, 防止 PID 异常时大幅跳变。
    *
-   * 算法:
-   * 1. 精确目标: targetZoom = currentZoom * (targetSize / facePixelSize)  [一步到位解]
-   * 2. 自适应限速: 误差大→30%/步(快追), 误差小→4%/步(抑抖)
-   * 3. 线性逼近: output = lastOutput + clamp(delta, ±maxDelta)
-   *
-   * vs EMA: 线性收敛(非指数), 大误差时快 3-5 倍; 限速 cap 防止噪声放大(无 overshoot)
+   * @param facePixelSize - 当前人脸 metric (眼距或 bounding box 宽度)
+   * @param currentZoom - 当前摄像头zoom倍数
+   * @returns 目标zoom倍数
    */
   public update(facePixelSize: number, currentZoom: number): number {
     if (this.targetSize === null) return currentZoom;
     if (facePixelSize <= 0) return this.lastOutputZoom;
 
     const { minZoom, maxZoom } = this.options;
+    const now = Date.now();
+    const dt = this.lastUpdateTime > 0
+      ? Math.max(0.03, Math.min(0.5, (now - this.lastUpdateTime) / 1000))
+      : 0.1;
+    this.lastUpdateTime = now;
 
-    // 步骤1: 精确目标 zoom
-    const errorRatio = this.targetSize / facePixelSize;
-    const targetZoom = currentZoom * errorRatio;
+    // 归一化误差: e>0 脸太小(远,需zoom in), e<0 脸太大(近,需zoom out)
+    const error = (this.targetSize - facePixelSize) / this.targetSize;
 
-    // 步骤2: 自适应 slew rate (误差大→快追, 误差小→精细抑抖)
-    const absError = Math.abs(errorRatio - 1);
-    const slewRate = 0.04 + 0.26 * Math.min(absError, 1);
+    // 积分项 (带 anti-windup 限幅)
+    this.integralError += error * dt;
+    this.integralError = Math.max(-0.5, Math.min(0.5, this.integralError));
+
+    // 微分项 (基于测量值: faceW 增大→D<0→制动, 避免误差突变尖峰)
+    let derivative = 0;
+    if (this.lastFaceSize > 0 && dt > 0) {
+      const dMeasurement = (facePixelSize - this.lastFaceSize) / dt;
+      derivative = -dMeasurement / this.targetSize;
+    }
+    this.lastFaceSize = facePixelSize;
+
+    // PID 输出: zoom 调整因子
+    const adjustment = this.Kp * error + this.Ki * this.integralError + this.Kd * derivative;
+    const targetZoom = currentZoom * (1 + adjustment);
+
+    // Slew-rate 安全帽 (误差大→快追 30%, 误差小→精细 5%, 防 PID 异常)
+    const absError = Math.abs(error);
+    const slewRate = 0.05 + 0.25 * Math.min(absError, 1);
     const maxDelta = Math.max(this.lastOutputZoom * slewRate, 0.05);
-
-    // 步骤3: 限速线性逼近目标(单调收敛, 无 overshoot)
     const delta = targetZoom - this.lastOutputZoom;
     const clampedDelta = Math.max(-maxDelta, Math.min(maxDelta, delta));
     const outputZoom = Math.max(minZoom, Math.min(maxZoom, this.lastOutputZoom + clampedDelta));

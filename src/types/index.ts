@@ -18,6 +18,8 @@ export interface FaceData {
   };
   /** 人脸唯一ID */
   faceID: number;
+  /** 双眼间距(像素, 比 bounding box 更稳定的 face-size metric) */
+  eyeDistance: number;
 }
 
 /** Zoom控制器配置选项 */

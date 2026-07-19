@@ -44,10 +44,20 @@ export function useFaceDetection() {
 
     const valid: FaceData[] = (detectedFaces || [])
       .filter((f) => f.bounds && f.bounds.width >= 50 && f.bounds.height >= 50)
-      .map((f, i) => ({
-        bounds: { x: f.bounds.x, y: f.bounds.y, width: f.bounds.width, height: f.bounds.height },
-        faceID: f.trackingId ?? i,
-      }));
+      .map((f, i) => {
+        // 双眼间距: 比 bounding box 更稳定的 face-size metric (几何特征, 不受光照/角度抖动)
+        let eyeDistance = 0;
+        if (f.landmarks?.LEFT_EYE && f.landmarks?.RIGHT_EYE) {
+          const dx = f.landmarks.LEFT_EYE.x - f.landmarks.RIGHT_EYE.x;
+          const dy = f.landmarks.LEFT_EYE.y - f.landmarks.RIGHT_EYE.y;
+          eyeDistance = Math.sqrt(dx * dx + dy * dy);
+        }
+        return {
+          bounds: { x: f.bounds.x, y: f.bounds.y, width: f.bounds.width, height: f.bounds.height },
+          faceID: f.trackingId ?? i,
+          eyeDistance,
+        };
+      });
 
     setFaces(valid);
 
@@ -85,8 +95,11 @@ export function useFaceDetection() {
     );
     const avg = { x: sum.x / n, y: sum.y / n, width: sum.width / n, height: sum.height / n };
 
-    // 控制器用原始 faceW(无 MA 延迟, 避免 overshoot); 显示用平滑 bounds
-    setPrimaryFaceWidth(primary.bounds.width);
+    // 控制器用眼距(更稳定), 无 landmark 时回退到 bounds width
+    const metric = primary.eyeDistance > 0 ? primary.eyeDistance : primary.bounds.width;
+
+    // 控制器用原始 metric(零延迟, 避免 overshoot); 显示用平滑 bounds
+    setPrimaryFaceWidth(metric);
     setPrimaryFaceHeight(primary.bounds.height);
     setPrimaryFaceBounds(avg);
     lockedFaceRef.current = primary;

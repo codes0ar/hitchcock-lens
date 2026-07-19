@@ -57,6 +57,8 @@ export function useZoomControl({
   const currentZoomRef = useRef(currentZoomRatio);
   /** 上一帧 faceW(deadzone 防抖: 变化<3% 不更新 zoom, 消除 high-zoom 微抖) */
   const lastFaceWRef = useRef(0);
+  /** 执行器匹配节流时间戳(镜头~100ms 才稳定, 控制器每 100ms 发一次命令, 否则几何级数发散→振荡) */
+  const lastControlTsRef = useRef(0);
 
   // === 状态 ===
   /** 当前显示给用户的zoom倍数 */
@@ -140,11 +142,15 @@ export function useZoomControl({
       if (primaryFaceWidth <= 0) return;
       if (!controllerRef.current) return;
 
-      // 注: deadzone 已移除 — slew-rate 限速器自带抖动抑制(误差小时 4%/步)
-      // deadzone 会跳过小变化更新, 造成慢动作累积延迟
+      // 执行器匹配节流: 镜头(CameraX zoom)~100ms 才到达目标位置
+      // 控制器每 100ms 才发一次命令, 确保每次都看到镜头稳定后的反馈
+      // 否则 33ms 内连续命令会在镜头到达前累积 → 几何级数发散 → 振荡
+      const now = Date.now();
+      if (now - lastControlTsRef.current < 100) return;
+      lastControlTsRef.current = now;
 
       try {
-        // 计算目标zoom倍数（用最新的 currentZoomRatio，避免 currentZoomRef 陈旧导致控制器收敛到错误均衡点）
+        // PID 控制器: P(快响应)+I(稳态)+D(制动), D 基于测量值避免尖峰
         const targetZoomRatio = controllerRef.current.update(
           primaryFaceWidth,
           currentZoomRatio
@@ -211,6 +217,7 @@ export function useZoomControl({
    */
   const resetZoom = useCallback(() => {
     targetSetRef.current = false;
+    lastControlTsRef.current = 0;
     if (controllerRef.current) {
       controllerRef.current.reset();
     }

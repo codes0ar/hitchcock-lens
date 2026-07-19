@@ -89,7 +89,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
 }) => {
   const detector = useFaceDetector({
     performanceMode: 'fast',
-    landmarkMode: 'none',
+    landmarkMode: 'all',
     contourMode: 'none',
     classificationMode: 'none',
     trackingEnabled: true,
