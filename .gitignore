@@ -1,0 +1,31 @@
+# Android / Build artifacts
+*.apk
+*.ap_
+*.aab
+*.dex
+*.class
+*.log
+*.tar.gz
+*.mp4
+*.png
+build/
+tmp/
+.hproj/
+
+# Gradle
+.gradle/
+gradle/
+local.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python / Scripts
+__pycache__/
+*.pyc

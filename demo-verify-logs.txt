@@ -1,0 +1,106 @@
+07-18 03:42:51.925 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=1651'
+07-18 03:42:51.946 28302 28375 I ReactNativeJS: [ZoomController] 目标人脸尺寸已设置: 2971.8px
+07-18 03:42:51.946 28302 28375 I ReactNativeJS: [useZoomControl] faceW=1651 zoom=1.12x norm=0.013
+07-18 03:42:55.922 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=1819'
+07-18 03:42:55.927 28302 28375 I ReactNativeJS: [useZoomControl] faceW=1819 zoom=1.23x norm=0.025
+07-18 03:42:59.950 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=1845'
+07-18 03:42:59.959 28302 28375 I ReactNativeJS: [useZoomControl] faceW=1845 zoom=1.34x norm=0.038
+07-18 03:43:03.937 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=1784'
+07-18 03:43:03.942 28302 28375 I ReactNativeJS: [useZoomControl] faceW=1784 zoom=1.47x norm=0.053
+07-18 03:43:07.901 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=1881'
+07-18 03:43:07.906 28302 28375 I ReactNativeJS: [useZoomControl] faceW=1881 zoom=1.60x norm=0.067
+07-18 03:43:11.765 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=1861'
+07-18 03:43:11.772 28302 28375 I ReactNativeJS: [useZoomControl] faceW=1861 zoom=1.74x norm=0.083
+07-18 03:43:15.625 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=1846'
+07-18 03:43:15.631 28302 28375 I ReactNativeJS: [useZoomControl] faceW=1846 zoom=1.90x norm=0.100
+07-18 03:43:19.509 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=1789'
+07-18 03:43:19.515 28302 28375 I ReactNativeJS: [useZoomControl] faceW=1789 zoom=2.09x norm=0.121
+07-18 03:43:23.442 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=2080'
+07-18 03:43:23.449 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2080 zoom=2.23x norm=0.136
+07-18 03:43:27.399 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=2406'
+07-18 03:43:27.404 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2406 zoom=2.31x norm=0.145
+07-18 03:43:31.277 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=2522'
+07-18 03:43:31.282 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2522 zoom=2.37x norm=0.152
+07-18 03:43:35.113 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=2732'
+07-18 03:43:35.121 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2732 zoom=2.40x norm=0.155
+07-18 03:43:38.935 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2775'
+07-18 03:43:38.940 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2775 zoom=2.42x norm=0.158
+07-18 03:43:42.776 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2790'
+07-18 03:43:42.785 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2790 zoom=2.45x norm=0.161
+07-18 03:43:46.582 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=2878'
+07-18 03:43:46.586 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2878 zoom=2.46x norm=0.162
+07-18 03:43:50.453 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=2876'
+07-18 03:43:50.460 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2876 zoom=2.47x norm=0.164
+07-18 03:43:54.301 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2897'
+07-18 03:43:54.306 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2897 zoom=2.48x norm=0.165
+07-18 03:43:58.185 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2923'
+07-18 03:43:58.191 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2923 zoom=2.49x norm=0.165
+07-18 03:44:01.985 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2923'
+07-18 03:44:05.893 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2958'
+07-18 03:44:05.898 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2958 zoom=2.49x norm=0.165
+07-18 03:44:09.726 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2896'
+07-18 03:44:09.732 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2896 zoom=2.50x norm=0.167
+07-18 03:44:13.618 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2963'
+07-18 03:44:13.623 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2963 zoom=2.50x norm=0.167
+07-18 03:44:17.417 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2969'
+07-18 03:44:17.423 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2969 zoom=2.50x norm=0.167
+07-18 03:44:21.268 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=3008'
+07-18 03:44:21.273 28302 28375 I ReactNativeJS: [useZoomControl] faceW=3008 zoom=2.50x norm=0.166
+07-18 03:44:25.160 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2988'
+07-18 03:44:25.165 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2988 zoom=2.49x norm=0.166
+07-18 03:44:28.944 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2974'
+07-18 03:44:28.948 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2974 zoom=2.49x norm=0.166
+07-18 03:44:32.742 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=2916'
+07-18 03:44:32.748 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2916 zoom=2.50x norm=0.167
+07-18 03:44:36.653 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2919'
+07-18 03:44:36.658 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2919 zoom=2.51x norm=0.168
+07-18 03:44:40.412 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=3009'
+07-18 03:44:40.419 28302 28375 I ReactNativeJS: [useZoomControl] faceW=3009 zoom=2.50x norm=0.167
+07-18 03:44:44.265 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2983'
+07-18 03:44:44.271 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2983 zoom=2.50x norm=0.167
+07-18 03:44:48.063 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=3039'
+07-18 03:44:48.068 28302 28375 I ReactNativeJS: [useZoomControl] faceW=3039 zoom=2.49x norm=0.166
+07-18 03:44:51.907 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=2988'
+07-18 03:44:51.913 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2988 zoom=2.49x norm=0.166
+07-18 03:44:55.777 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=2933'
+07-18 03:44:55.781 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2933 zoom=2.50x norm=0.166
+07-18 03:44:59.574 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2961'
+07-18 03:44:59.580 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2961 zoom=2.50x norm=0.166
+07-18 03:45:03.398 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2994'
+07-18 03:45:03.404 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2994 zoom=2.49x norm=0.166
+07-18 03:45:07.218 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2973'
+07-18 03:45:07.222 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2973 zoom=2.49x norm=0.166
+07-18 03:45:11.074 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2969'
+07-18 03:45:11.084 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2969 zoom=2.49x norm=0.166
+07-18 03:45:14.887 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2989'
+07-18 03:45:14.893 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2989 zoom=2.49x norm=0.166
+07-18 03:45:18.736 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2935'
+07-18 03:45:18.741 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2935 zoom=2.50x norm=0.166
+07-18 03:45:22.600 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=3018'
+07-18 03:45:22.606 28302 28375 I ReactNativeJS: [useZoomControl] faceW=3018 zoom=2.49x norm=0.166
+07-18 03:45:26.493 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2955'
+07-18 03:45:26.500 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2955 zoom=2.49x norm=0.166
+07-18 03:45:30.317 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2942'
+07-18 03:45:30.323 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2942 zoom=2.50x norm=0.166
+07-18 03:45:34.132 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2972'
+07-18 03:45:34.138 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2972 zoom=2.50x norm=0.166
+07-18 03:45:37.934 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2994'
+07-18 03:45:37.939 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2994 zoom=2.49x norm=0.166
+07-18 03:45:41.786 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2919'
+07-18 03:45:41.791 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2919 zoom=2.50x norm=0.167
+07-18 03:45:45.555 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2994'
+07-18 03:45:45.561 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2994 zoom=2.50x norm=0.167
+07-18 03:45:49.405 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2984'
+07-18 03:45:49.410 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2984 zoom=2.50x norm=0.166
+07-18 03:45:53.163 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=3006'
+07-18 03:45:53.170 28302 28375 I ReactNativeJS: [useZoomControl] faceW=3006 zoom=2.49x norm=0.166
+07-18 03:45:56.961 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=2967'
+07-18 03:45:56.967 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2967 zoom=2.49x norm=0.166
+07-18 03:46:00.681 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2950'
+07-18 03:46:00.687 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2950 zoom=2.50x norm=0.166
+07-18 03:46:04.491 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2945'
+07-18 03:46:04.496 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2945 zoom=2.50x norm=0.167
+07-18 03:46:08.296 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 1, '张人脸, primaryW=2982'
+07-18 03:46:08.302 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2982 zoom=2.50x norm=0.166
+07-18 03:46:12.018 28302 28375 I ReactNativeJS: '[useFaceDetection] 检测到', 2, '张人脸, primaryW=2962'
+07-18 03:46:12.024 28302 28375 I ReactNativeJS: [useZoomControl] faceW=2962 zoom=2.50x norm=0.167
