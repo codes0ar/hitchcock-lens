@@ -23,6 +23,8 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 export default function App(): JSX.Element {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  /** 录制时的黄色参考框(固定屏幕位置, 提示用户保持人脸居中+控制移动速度) */
+  const [referenceBounds, setReferenceBounds] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
   const {
     cameraRef,
@@ -75,6 +77,8 @@ export default function App(): JSX.Element {
 
   const handleToggleRecording = useCallback(async () => {
     if (recordingStatus === 'idle') {
+      // 捕获当前人脸框作为黄色参考(固定位置, 不随脸移动)
+      setReferenceBounds(primaryFaceBounds);
       try {
         await startRecording();
       } catch (error) {
@@ -82,6 +86,7 @@ export default function App(): JSX.Element {
         Alert.alert('录制失败', '无法开始录制，请重试');
       }
     } else if (recordingStatus === 'recording') {
+      setReferenceBounds(null);
       try {
         const result = await stopRecording();
         console.log('[App] 录制完成:', result);
@@ -90,7 +95,7 @@ export default function App(): JSX.Element {
         Alert.alert('保存失败', '视频保存时出错');
       }
     }
-  }, [recordingStatus, startRecording, stopRecording]);
+  }, [recordingStatus, startRecording, stopRecording, primaryFaceBounds]);
 
   const handleRequestPermission = useCallback(async () => {
     const granted = await requestAllPermissions();
@@ -133,6 +138,7 @@ export default function App(): JSX.Element {
       cameraReady={cameraReady}
       onCameraReady={onCameraReady}
       faceBounds={primaryFaceBounds}
+      referenceBounds={referenceBounds}
       onFacesDetected={onFacesDetected}
       faceLockStatus={lockStatus}
       recordingStatus={recordingStatus}

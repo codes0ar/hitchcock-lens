@@ -60,6 +60,10 @@ export function useZoomControl({
   const lastFaceWRef = useRef(0);
   /** 执行器匹配节流时间戳(镜头~100ms 才稳定, 控制器每 100ms 发一次命令, 否则几何级数发散→振荡) */
   const lastControlTsRef = useRef(0);
+  /** PID 目标 zoom(Stage1 每 100ms 计算, Stage2 每 33ms 平滑逼近) */
+  const targetZoomRef = useRef(1.0);
+  /** 平滑后的实际 zoom(Stage2 EMA 输出, 30fps 连续更新消除跳动) */
+  const smoothedZoomRef = useRef(1.0);
 
   // === 状态 ===
   /** 当前显示给用户的zoom倍数 */
@@ -145,40 +149,28 @@ export function useZoomControl({
       if (primaryFaceWidth <= 0) return;
       if (!controllerRef.current) return;
 
-      // 执行器匹配节流: 镜头(CameraX zoom)~100ms 才到达目标位置
-      // 控制器每 100ms 才发一次命令, 确保每次都看到镜头稳定后的反馈
-      // 否则 33ms 内连续命令会在镜头到达前累积 → 几何级数发散 → 振荡
+      // Stage 2: 平滑插值(每 33ms, EMA 0.3 → 时间常数~100ms, 消除 100ms 步进跳动感)
+      const target = targetZoomRef.current;
+      const current = smoothedZoomRef.current;
+      const smoothed = current + (target - current) * 0.3;
+      smoothedZoomRef.current = smoothed;
+      const normalizedZoom = convertZoomToNormalized(smoothed, minZoomRatio, maxZoomRatio);
+      setNormalizedZoom(normalizedZoom);
+      setDisplayZoom(smoothed);
+
+      // Stage 1: PID 目标计算(每 100ms, 匹配镜头执行器响应时间)
       const now = Date.now();
-      const elapsed = now - lastControlTsRef.current;
-      if (elapsed < 100) {
-        // DEBUG: 节流跳过
-        console.log('[Throttle] skip elapsed=' + elapsed + 'ms faceW=' + primaryFaceWidth.toFixed(1));
-        return;
-      }
-      lastControlTsRef.current = now;
-
-      try {
-        // PID 控制器: P(快响应)+I(稳态)+D(制动), D 基于测量值避免尖峰
-        const targetZoomRatio = controllerRef.current.update(
-          primaryFaceWidth,
-          currentZoomRatio
-        );
-
-        // 转换为归一化zoom值并更新摄像头
-        const normalizedZoom = convertZoomToNormalized(
-          targetZoomRatio,
-          minZoomRatio,
-          maxZoomRatio
-        );
-
-        setNormalizedZoom(normalizedZoom);
-        setDisplayZoom(targetZoomRatio);
-        if (controllerRef.current?.lastDebug) {
-          setDebugInfo({ ...controllerRef.current.lastDebug });
+      if (now - lastControlTsRef.current >= 100) {
+        lastControlTsRef.current = now;
+        try {
+          const pidOutput = controllerRef.current.update(primaryFaceWidth, smoothed);
+          targetZoomRef.current = pidOutput;
+          if (controllerRef.current?.lastDebug) {
+            setDebugInfo({ ...controllerRef.current.lastDebug });
+          }
+        } catch (error) {
+          console.error('[useZoomControl] PID更新失败:', error);
         }
-        console.log('[Ctrl] faceW=' + primaryFaceWidth.toFixed(1) + ' zoom=' + targetZoomRatio.toFixed(3) + 'x norm=' + normalizedZoom.toFixed(3) + ' curZ=' + currentZoomRatio.toFixed(3));
-      } catch (error) {
-        console.error('[useZoomControl] Zoom更新失败:', error);
       }
     }
   }, [
@@ -187,8 +179,6 @@ export function useZoomControl({
     setNormalizedZoom,
     minZoomRatio,
     maxZoomRatio,
-    // 注意：currentZoomRatio 故意不放入依赖。每次新检测(primaryFaceWidth变化)时闭包已捕获其最新值；
-    // 若放入依赖，setNormalizedZoom→currentZoomRatio变化→effect再触发，会形成反馈回路在单帧内冲到 maxZoom。
   ]);
 
   /**
@@ -229,6 +219,8 @@ export function useZoomControl({
   const resetZoom = useCallback(() => {
     targetSetRef.current = false;
     lastControlTsRef.current = 0;
+    targetZoomRef.current = 1.0;
+    smoothedZoomRef.current = 1.0;
     if (controllerRef.current) {
       controllerRef.current.reset();
     }

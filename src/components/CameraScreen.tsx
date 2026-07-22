@@ -48,6 +48,8 @@ interface CameraScreenProps {
   cameraReady: boolean;
   onCameraReady: () => void;
   faceBounds: { x: number; y: number; width: number; height: number } | null;
+  /** 录制时的黄色参考框(固定屏幕位置, 不随人脸移动) */
+  referenceBounds: { x: number; y: number; width: number; height: number } | null;
   onFacesDetected: (faces: Face[]) => void;
   faceLockStatus: FaceLockStatus;
   recordingStatus: RecordingStatus;
@@ -76,6 +78,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
   cameraReady,
   onCameraReady,
   faceBounds,
+  referenceBounds,
   onFacesDetected,
   faceLockStatus,
   recordingStatus,
@@ -222,6 +225,23 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
         />
       )}
 
+      {/* === 录制时的黄色参考框(固定屏幕位置, 提示用户保持人脸居中+控制移动速度) === */}
+      {referenceBounds && referenceBounds.width > 0 && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: referenceBounds.x,
+            top: referenceBounds.y,
+            width: referenceBounds.width,
+            height: referenceBounds.height,
+            borderColor: 'rgba(255, 215, 0, 0.85)',
+            borderWidth: 3,
+            zIndex: 5,
+          }}
+        />
+      )}
+
       {/* === 中心准星(自动居中激活时显示) === */}
       {center.gain > 0 && (
         <View style={styles.centerReticle} pointerEvents="none">
@@ -240,7 +260,8 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
           {debugInfo ? `err:${debugInfo.error.toFixed(4)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
           {debugInfo ? `P:${debugInfo.P.toFixed(4)} I:${debugInfo.I.toFixed(4)} D:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
           {debugInfo ? `dMeas:${debugInfo.dMeasurement.toFixed(1)} intg:${debugInfo.integral.toFixed(3)}` : ''}{'\n'}
-          {debugInfo ? `out:${debugInfo.output.toFixed(3)}x` : ''}
+          {debugInfo ? `out:${debugInfo.output.toFixed(3)}x` : ''}{'\n'}
+          v1.0.0
         </Text>
       </View>
 
