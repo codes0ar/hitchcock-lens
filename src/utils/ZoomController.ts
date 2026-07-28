@@ -89,6 +89,31 @@ export class ZoomController {
   /** 控制器配置选项 */
   private options: ZoomControllerOptions;
 
+  // === 匀速卡尔曼滤波（人脸尺寸 s 及其变化率 v 的状态估计，替代 2帧MA）===
+  /** 卡尔曼状态：人脸尺寸估计 s */
+  private kS = 0;
+  /** 卡尔曼状态：尺寸变化率估计 v (px/s) */
+  private kV = 0;
+  /** 卡尔曼协方差 */
+  private kP00 = 100;
+  private kP01 = 0;
+  private kP11 = 100;
+  /** 卡尔曼过程噪声(尺寸) / 过程噪声(速度) / 测量噪声（保守取值） */
+  private readonly KF_QS = 8;
+  private readonly KF_QV = 40;
+  private readonly KF_R = 6;
+  /** 上一次 actualZoom（用于求 dlog(z_lens)/dt，进而算扰动速率 rd） */
+  private prevActualZoom = 0;
+  /** 镜头物理滞后估计 T_lag（秒），用于扰动前馈提前量 */
+  private readonly T_LAG = 0.12;
+  /** 是否启用 卡尔曼输入平滑 + T_lag 扰动前馈（A/B 对比开关） */
+  private useKalmanLead = true;
+
+  /** 切换控制模式：true=PID+卡尔曼+前馈, false=纯 PID */
+  public setKalmanLead(enabled: boolean): void {
+    this.useKalmanLead = enabled;
+  }
+
   /** PID 增益 (默认值, slider 可在录制中随时调整) */
   private Kp = 0.3;
   private Ki = 0.02;
@@ -143,6 +168,13 @@ export class ZoomController {
     this.integralError = 0;
     this.lastFaceSize = 0;
     this.lastUpdateTime = 0;
+    // 重置卡尔曼滤波与扰动前馈状态
+    this.kS = 0;
+    this.kV = 0;
+    this.kP00 = 100;
+    this.kP01 = 0;
+    this.kP11 = 100;
+    this.prevActualZoom = 0;
   }
 
   /**
@@ -214,8 +246,18 @@ export class ZoomController {
     const actAlpha = dt / (ACTUATOR_TAU + dt);
     this.actualZoom += (this.lastOutputZoom - this.actualZoom) * actAlpha;
 
+    // === 输入端人脸尺寸估计（A/B 开关）===
+    // useKalmanLead=true: 卡尔曼滤波得干净 s/v; false(纯PID): 直接用原始 facePixelSize
+    let faceS = facePixelSize;
+    let faceV = 0;
+    if (this.useKalmanLead) {
+      const kf = this.kalmanUpdate(facePixelSize, dt);
+      faceS = kf.s;
+      faceV = kf.v;
+    }
+
     // 对数误差：+ 脸太小需要 zoom in，- 脸太大需要 zoom out
-    const logError = Math.log(target / facePixelSize);
+    const logError = Math.log(target / faceS);
 
     // 死区：|误差|<1% 时不调整，防止围绕目标的微震荡；同时积分衰减防残余拉动
     // 1% 让步进更细（原来 2% 会"憋一下才纠正"，放大时有明显跳跃感）
@@ -231,19 +273,37 @@ export class ZoomController {
       this.integralError = Math.max(-1.0, Math.min(1.0, this.integralError));
     }
 
-    // 微分项：基于对数测量值变化率 (D=0 时无效果)
-    let logDerivative = 0;
+    // 微分项：卡尔曼模式用速度 v；纯PID用有限差分
     const rawDelta = this.lastFaceSize > 0 ? facePixelSize - this.lastFaceSize : 0;
-    if (this.lastFaceSize > 0 && dt > 0) {
+    let logDerivative = 0;
+    if (this.useKalmanLead) {
+      logDerivative = faceS > 0 ? -faceV / faceS : 0;
+    } else if (this.lastFaceSize > 0 && dt > 0) {
       logDerivative = -(Math.log(facePixelSize) - Math.log(this.lastFaceSize)) / dt;
     }
     this.lastFaceSize = facePixelSize;
 
-    // PID 修正项作用于指数（死区内整体为零）
+    // === 扰动速率前馈（T_lag 提前量，补镜头物理滞后；仅卡尔曼+前馈模式启用）===
+    let lead = 0;
+    if (this.useKalmanLead) {
+      let rd = 0;
+      if (this.prevActualZoom > 0 && faceS > 0 && dt > 0) {
+        const dlogZ = (Math.log(this.actualZoom) - Math.log(this.prevActualZoom)) / dt;
+        const dlogS = faceV / faceS;
+        rd = dlogZ - dlogS;
+      }
+      const RD_CLAMP = 2.0; // 扰动速率限幅 (1/s)，防检测噪声放大提前量
+      rd = Math.max(-RD_CLAMP, Math.min(RD_CLAMP, rd));
+      lead = rd * this.T_LAG;
+      lead = Math.max(-0.3, Math.min(0.3, lead)); // 提前量限幅，保守防过冲
+    }
+    this.prevActualZoom = this.actualZoom;
+
+    // PID 修正项作用于指数（死区内整体为零）+ T_lag 前馈提前量
     const P = this.Kp * effectiveError;
     const I = this.Ki * this.integralError;
     const D = this.Kd * logDerivative;
-    const adjustment = inDeadband ? 0 : P + I + D;
+    const adjustment = (inDeadband ? 0 : P + I + D) + lead;
 
     // 几何前馈：用估计的真实 zoom 计算目标
     const desiredZoom = Math.max(minZoom, Math.min(maxZoom, this.actualZoom * Math.exp(adjustment)));
@@ -289,6 +349,35 @@ export class ZoomController {
     }
 
     return outputZoom;
+  }
+
+  /**
+   * 匀速卡尔曼滤波（constant-velocity）：估计人脸尺寸 s 与变化率 v
+   * 替代 2帧MA，最优降噪；v 同时用作 Kd 的干净微分 和 扰动速率前馈的 dlog(s)/dt
+   */
+  private kalmanUpdate(z: number, dt: number): { s: number; v: number } {
+    if (this.kS <= 0) {
+      this.kS = z;
+      this.kV = 0;
+      return { s: z, v: 0 };
+    }
+    const dtc = Math.max(0.01, Math.min(0.5, dt));
+    // Predict (F = [[1, dt],[0,1]])
+    const sP = this.kS + this.kV * dtc;
+    const p00 = this.kP00 + 2 * dtc * this.kP01 + dtc * dtc * this.kP11 + this.KF_QS;
+    const p01 = this.kP01 + dtc * this.kP11;
+    const p11 = this.kP11 + this.KF_QV;
+    // Update (H = [1, 0])
+    const y = z - sP;
+    const S = p00 + this.KF_R;
+    const k0 = p00 / S;
+    const k1 = p01 / S;
+    this.kS = sP + k0 * y;
+    this.kV = this.kV + k1 * y;
+    this.kP00 = (1 - k0) * p00;
+    this.kP01 = (1 - k0) * p01;
+    this.kP11 = p11 - k1 * p01;
+    return { s: this.kS, v: this.kV };
   }
 
   /**

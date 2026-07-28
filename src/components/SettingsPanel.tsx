@@ -103,6 +103,9 @@ interface SettingsPanelProps {
   onUpdatePidKp: (v: number) => void;
   onUpdatePidKi: (v: number) => void;
   onUpdatePidKd: (v: number) => void;
+  /** 控制模式：true=PID+卡尔曼+前馈, false=纯PID */
+  kalmanLeadEnabled: boolean;
+  onToggleKalmanLead: () => void;
 }
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
@@ -112,6 +115,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onUpdatePidKp,
   onUpdatePidKi,
   onUpdatePidKd,
+  kalmanLeadEnabled,
+  onToggleKalmanLead,
 }) => {
   const [visible, setVisible] = useState(false);
 
@@ -181,10 +186,16 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 description="抑制震荡, 噪声敏感"
               />
 
+              <TouchableOpacity style={styles.modeButton} onPress={onToggleKalmanLead} activeOpacity={0.8}>
+                <Text style={styles.modeButtonText}>
+                  控制模式: {kalmanLeadEnabled ? 'PID + 卡尔曼 + 前馈' : '纯 PID'}
+                </Text>
+              </TouchableOpacity>
+
               <View style={styles.infoSection}>
                 <Text style={styles.infoTitle}>默认值</Text>
-                <Text style={styles.infoText}>Kp=0.50  Ki=0.02  Kd=0.00</Text>
-                <Text style={styles.infoHint}>slider 或 −/＋ 按钮即时生效</Text>
+                <Text style={styles.infoText}>Kp=0.80  Ki=0.02  Kd=0.03</Text>
+                <Text style={styles.infoHint}>slider 或 −/＋ 按钮即时生效 · 点上方按钮切换 A/B 模式对比</Text>
               </View>
 
               <TouchableOpacity style={styles.doneButton} onPress={closePanel} activeOpacity={0.8}>
@@ -217,6 +228,8 @@ const styles = StyleSheet.create({
   infoHint: { color: '#555', fontSize: 10, marginTop: 3 },
   doneButton: { marginTop: 8, backgroundColor: '#007AFF', borderRadius: 8, paddingVertical: 8, alignItems: 'center' },
   doneButtonText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  modeButton: { marginTop: 2, marginBottom: 10, backgroundColor: 'rgba(0,122,255,0.25)', borderRadius: 8, paddingVertical: 8, alignItems: 'center', borderWidth: 1, borderColor: '#007AFF' },
+  modeButtonText: { color: '#4da3ff', fontSize: 13, fontWeight: '700' },
 });
 
 const sliderStyles = StyleSheet.create({

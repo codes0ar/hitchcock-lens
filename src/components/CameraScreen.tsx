@@ -110,6 +110,9 @@ interface CameraScreenProps {
   onUpdatePidKp: (v: number) => void;
   onUpdatePidKi: (v: number) => void;
   onUpdatePidKd: (v: number) => void;
+  /** 控制模式开关状态与切换（PID+卡尔曼+前馈 vs 纯PID） */
+  kalmanLeadEnabled: boolean;
+  onToggleKalmanLead: () => void;
   onRequestPermission: () => void;
 }
 
@@ -144,6 +147,8 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
   onUpdatePidKp,
   onUpdatePidKi,
   onUpdatePidKd,
+  kalmanLeadEnabled,
+  onToggleKalmanLead,
   onRequestPermission,
   onManualZoomRatio,
 }) => {
@@ -410,7 +415,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
           {debugInfo ? `Kp*e:${debugInfo.P.toFixed(4)} Ki*∫:${debugInfo.I.toFixed(4)} Kd*de:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
           {debugInfo ? `dMeas:${debugInfo.dMeasurement.toFixed(1)} ∫e:${debugInfo.integral.toFixed(3)}` : ''}{'\n'}
           {debugInfo ? `out:${debugInfo.output.toFixed(3)}x` : ''}{'\n'}
-          v4.3
+          v4.7
         </Text>
       </View>
 
@@ -459,7 +464,8 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
         <ZoomDisplay zoomRatio={displayZoom} />
         <RecordButton recordingStatus={recordingStatus} onPress={onToggleRecording} />
         <SettingsPanel pidKp={pidKp} pidKi={pidKi} pidKd={pidKd}
-          onUpdatePidKp={onUpdatePidKp} onUpdatePidKi={onUpdatePidKi} onUpdatePidKd={onUpdatePidKd} />
+          onUpdatePidKp={onUpdatePidKp} onUpdatePidKi={onUpdatePidKi} onUpdatePidKd={onUpdatePidKd}
+          kalmanLeadEnabled={kalmanLeadEnabled} onToggleKalmanLead={onToggleKalmanLead} />
       </View>
     </SafeAreaView>
   );

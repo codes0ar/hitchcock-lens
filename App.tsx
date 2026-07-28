@@ -7,7 +7,7 @@
  *     → [Camera.startRecording] 录像中实时变焦 = dolly-zoom
  */
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Alert } from 'react-native';
 
 import type { AppSettings } from './src/types';
@@ -63,7 +63,7 @@ export default function App(): JSX.Element {
     faceDebug,
   } = useFaceDetection();
 
-  const { displayZoom, isLocked, debugInfo, resetZoom, setTargetSize } = useZoomControl({
+  const { displayZoom, isLocked, debugInfo, resetZoom, setTargetSize, setKalmanLead } = useZoomControl({
     currentZoomRatio: getCurrentZoomRatio(),
     setNormalizedZoom,
     faceLockStatus: lockStatus,
@@ -74,6 +74,12 @@ export default function App(): JSX.Element {
     ki: pidKi,
     kd: pidKd,
   });
+
+  /** 控制模式开关：true=PID+卡尔曼+前馈(实测负优化), false=纯PID(默认,实测最优) */
+  const [kalmanLeadEnabled, setKalmanLeadEnabled] = useState(false);
+  useEffect(() => {
+    setKalmanLead(kalmanLeadEnabled);
+  }, [kalmanLeadEnabled, setKalmanLead]);
 
   const handleUpdateSettings = useCallback(
     (partial: Partial<AppSettings>) => {
@@ -197,6 +203,8 @@ export default function App(): JSX.Element {
       onUpdatePidKp={setPidKp}
       onUpdatePidKi={setPidKi}
       onUpdatePidKd={setPidKd}
+      kalmanLeadEnabled={kalmanLeadEnabled}
+      onToggleKalmanLead={() => setKalmanLeadEnabled((v) => !v)}
       onRequestPermission={handleRequestPermission}
     />
   );

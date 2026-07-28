@@ -222,12 +222,18 @@ export function useZoomControl({
     }
   }, []);
 
+  /** 切换控制模式：true=PID+卡尔曼+前馈, false=纯 PID (A/B 对比) */
+  const setKalmanLead = useCallback((enabled: boolean) => {
+    controllerRef.current?.setKalmanLead(enabled);
+  }, []);
+
   return {
     displayZoom,
     showLockIndicator,
     debugInfo,
     resetZoom,
     setTargetSize,
+    setKalmanLead,
     isLocked: controllerRef.current?.isLocked() ?? false,
   };
 }
