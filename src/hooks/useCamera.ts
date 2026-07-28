@@ -52,8 +52,10 @@ export function useCamera() {
       const devMin = typeof device.minZoom === 'number' && device.minZoom > 0
         ? device.minZoom
         : 1.0;
+      // 数码变焦接力：上限恢复到 10x，保证远距离也能把人脸放大到黄框尺寸
+      // （v2.1 曾压到 4x 导致"绿框远小于黄框也调不动"，现恢复；高倍会糊是数码变焦物理特性）
       const devMax = typeof device.maxZoom === 'number' && device.maxZoom > 1
-        ? Math.min(device.maxZoom, 15)
+        ? Math.min(device.maxZoom, 10)
         : 10.0;
       setMinZoomRatio(devMin);
       setMaxZoomRatio(devMax);

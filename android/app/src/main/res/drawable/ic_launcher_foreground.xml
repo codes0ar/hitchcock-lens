@@ -4,29 +4,48 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- 相机机身 -->
+    <!-- 取景框四角 (绿) -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M30,42 L40,42 L44,36 L64,36 L68,42 L78,42 C80.2,42 82,43.8 82,46 L82,68 C82,70.2 80.2,72 78,72 L30,72 C27.8,72 26,70.2 26,68 L26,46 C26,43.8 27.8,42 30,42 Z"/>
-    <!-- 取景器凸起 -->
+        android:strokeColor="#30D158"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M30,44 L30,30 L44,30" />
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M46,36 L48,32 L60,32 L62,36 Z"/>
-    <!-- 镜头外圈(黑) -->
+        android:strokeColor="#30D158"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M64,30 L78,30 L78,44" />
     <path
-        android:fillColor="#000000"
-        android:pathData="M54,57 m-16,0 a16,16 0 1,0 32,0 a16,16 0 1,0 -32,0"/>
-    <!-- 镜头内圈(白) -->
+        android:strokeColor="#30D158"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M30,64 L30,78 L44,78" />
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M54,57 m-10,0 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0"/>
-    <!-- 镜头核心(黑) -->
+        android:strokeColor="#30D158"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M64,78 L78,78 L78,64" />
+    <!-- 变焦双向箭头 (蓝, 对角) -->
     <path
-        android:fillColor="#000000"
-        android:pathData="M54,57 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0"/>
-    <!-- dolly-zoom 放射线(4条, 表示背景拉伸) -->
-    <path android:fillColor="#FF3B30" android:pathData="M54,57 L70,41 L74,41 L74,45 Z"/>
-    <path android:fillColor="#FF3B30" android:pathData="M54,57 L38,41 L34,41 L34,45 Z"/>
-    <path android:fillColor="#FF3B30" android:pathData="M54,57 L70,73 L74,73 L74,69 Z"/>
-    <path android:fillColor="#FF3B30" android:pathData="M54,57 L38,73 L34,73 L34,69 Z"/>
+        android:strokeColor="#0A84FF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M40,68 L68,40" />
+    <!-- 箭头头部: 右上 -->
+    <path
+        android:strokeColor="#0A84FF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M68,40 L60,43 M68,40 L65,48" />
+    <!-- 箭头头部: 左下 -->
+    <path
+        android:strokeColor="#0A84FF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M40,68 L48,65 M40,68 L43,60" />
+    <!-- 人脸圆 (白) -->
+    <path
+        android:strokeColor="#F5F5F7"
+        android:strokeWidth="3.5"
+        android:pathData="M54,54 m-15,0 a15,15 0 1,0 30,0 a15,15 0 1,0 -30,0" />
 </vector>

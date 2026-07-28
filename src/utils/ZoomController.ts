@@ -74,21 +74,25 @@ export function convertNormalizedToZoom(
 export class ZoomController {
   /** 目标人脸像素宽度（首次检测到时记录, 优先用眼距） */
   private targetSize: number | null = null;
-  /** 上一次的输出zoom值（用于 slew-rate 限速） */
+  /** 上一次的输出zoom值（指令值，用于 slew-rate 限速） */
   private lastOutputZoom: number = 1.0;
+  /** 执行器模型：估计真实镜头当前位置（一阶滞后，τ≈120ms） */
+  private actualZoom: number = 1.0;
   /** PID 积分项累积 */
   private integralError: number = 0;
   /** 上一次的测量值(用于 D-on-measurement, 避免 setpoint 尖峰) */
   private lastFaceSize: number = 0;
   /** 上一次更新时间戳(ms, 用于计算 dt) */
   private lastUpdateTime: number = 0;
+  /** console.log 降频用时间戳(日志跨桥开销大) */
+  private lastLogTs: number = 0;
   /** 控制器配置选项 */
   private options: ZoomControllerOptions;
 
-  /** PID 增益 (dt≈0.1s, 100ms 执行器匹配节流) */
-  private readonly Kp = 0.3;  // 比例: 保守(降低噪声放大)
-  private readonly Ki = 0.02; // 积分: 消除稳态偏差
-  private readonly Kd = 0.0;  // 微分: 设为0 — D-on-measurement 在噪声系统下放大振荡
+  /** PID 增益 (默认值, slider 可在录制中随时调整) */
+  private Kp = 0.3;
+  private Ki = 0.02;
+  private Kd = 0.0;
 
   /** 上次 update 的调试信息(on-screen overlay 用) */
   public lastDebug: PIDDebug | null = null;
@@ -96,6 +100,7 @@ export class ZoomController {
   constructor(options: Partial<ZoomControllerOptions> = {}) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
     this.lastOutputZoom = this.options.minZoom;
+    this.actualZoom = this.options.minZoom;
   }
 
   /**
@@ -134,6 +139,7 @@ export class ZoomController {
   public reset(): void {
     this.targetSize = null;
     this.lastOutputZoom = this.options.minZoom;
+    this.actualZoom = this.options.minZoom;
     this.integralError = 0;
     this.lastFaceSize = 0;
     this.lastUpdateTime = 0;
@@ -155,14 +161,32 @@ export class ZoomController {
   }
 
   /**
-   * PID 控制算法 — 固定增益 P+I+D (无自适应元素, 确保环路稳定)
+   * 动态设置 PID 增益(slider 实时调节, 录制中可调)
+   */
+  public setGains(kp: number, ki: number, kd: number): void {
+    this.Kp = kp;
+    this.Ki = ki;
+    this.Kd = kd;
+  }
+
+  /**
+   * 获取当前 PID 增益
+   */
+  public getGains(): { kp: number; ki: number; kd: number } {
+    return { kp: this.Kp, ki: this.Ki, kd: this.Kd };
+  }
+
+  /**
+   * 变焦控制器 — 几何前馈 + 增量式 PID + 执行器一阶滞后模型 + 速率限制
    *
-   * Kp/Ki/Kd 设定后固定不变。P/I/D 输出项随误差变化(这是 PID 的正常行为),
-   * 但增益本身恒定 → 环路传递函数稳定。
+   * 关键修复：不再把"指令 zoom"当反馈，而是用内部执行器模型估计真实镜头位置。
+   * 人脸像素尺寸 s ≈ k * actualZoom / distance，
+   * 因此目标 zoom = actualZoom * target / s（Kp=1 时一步静态补偿到位）。
+   * 用估计的 actualZoom 做反馈可避免"指令立即生效"导致的累积过冲/震荡。
    *
    * @param facePixelSize - 当前人脸 metric (眼距 MA)
-   * @param currentZoom - 当前摄像头zoom倍数
-   * @returns 目标zoom倍数
+   * @param currentZoom - 当前真实镜头 zoom 倍数（仅第一帧用于初始化）
+   * @returns 目标 zoom 倍数（指令值）
    */
   public update(facePixelSize: number, currentZoom: number): number {
     if (this.targetSize === null) return currentZoom;
@@ -170,45 +194,99 @@ export class ZoomController {
 
     const { minZoom, maxZoom } = this.options;
     const now = Date.now();
-    const dt = this.lastUpdateTime > 0
-      ? Math.max(0.03, Math.min(0.5, (now - this.lastUpdateTime) / 1000))
-      : 0.1;
+    const isFirstUpdate = this.lastUpdateTime === 0;
+    const dt = isFirstUpdate
+      ? 0.1
+      : Math.max(0.03, Math.min(0.5, (now - this.lastUpdateTime) / 1000));
     this.lastUpdateTime = now;
 
-    // 归一化误差: e>0 脸太小(远,需zoom in), e<0 脸太大(近,需zoom out)
-    const error = (this.targetSize - facePixelSize) / this.targetSize;
+    // 第一帧以当前真实 zoom 初始化执行器模型与指令值
+    if (isFirstUpdate) {
+      this.actualZoom = currentZoom;
+      this.lastOutputZoom = currentZoom;
+    }
 
-    // 积分项 (anti-windup ±0.5)
-    this.integralError += error * dt;
-    this.integralError = Math.max(-0.5, Math.min(0.5, this.integralError));
+    const target = this.targetSize;
 
-    // 微分项 (基于测量值变化率, D=0 时无效果)
-    let derivative = 0;
+    // 执行器一阶滞后模型：真实镜头以 τ≈100ms 时间常数跟随指令
+    // (130→100ms 再降延迟；回稳主要受平滑限制而非速率限制)
+    const ACTUATOR_TAU = 0.10;
+    const actAlpha = dt / (ACTUATOR_TAU + dt);
+    this.actualZoom += (this.lastOutputZoom - this.actualZoom) * actAlpha;
+
+    // 对数误差：+ 脸太小需要 zoom in，- 脸太大需要 zoom out
+    const logError = Math.log(target / facePixelSize);
+
+    // 死区：|误差|<1% 时不调整，防止围绕目标的微震荡；同时积分衰减防残余拉动
+    // 1% 让步进更细（原来 2% 会"憋一下才纠正"，放大时有明显跳跃感）
+    const DEADBAND = 0.01;
+    const inDeadband = Math.abs(logError) < DEADBAND;
+    const effectiveError = inDeadband ? 0 : logError;
+
+    // 积分项 (anti-windup ±1.0)
+    if (inDeadband) {
+      this.integralError *= 0.9;
+    } else {
+      this.integralError += effectiveError * dt;
+      this.integralError = Math.max(-1.0, Math.min(1.0, this.integralError));
+    }
+
+    // 微分项：基于对数测量值变化率 (D=0 时无效果)
+    let logDerivative = 0;
+    const rawDelta = this.lastFaceSize > 0 ? facePixelSize - this.lastFaceSize : 0;
     if (this.lastFaceSize > 0 && dt > 0) {
-      derivative = -(facePixelSize - this.lastFaceSize) / dt / this.targetSize;
+      logDerivative = -(Math.log(facePixelSize) - Math.log(this.lastFaceSize)) / dt;
     }
     this.lastFaceSize = facePixelSize;
 
-    // PID: 固定增益, 纯线性组合, 无自适应/限速(增益恒定→环路稳定)
-    const P = this.Kp * error;
+    // PID 修正项作用于指数（死区内整体为零）
+    const P = this.Kp * effectiveError;
     const I = this.Ki * this.integralError;
-    const D = this.Kd * derivative;
-    const adjustment = P + I + D;
-    const outputZoom = Math.max(minZoom, Math.min(maxZoom, currentZoom * (1 + adjustment)));
+    const D = this.Kd * logDerivative;
+    const adjustment = inDeadband ? 0 : P + I + D;
+
+    // 几何前馈：用估计的真实 zoom 计算目标
+    const desiredZoom = Math.max(minZoom, Math.min(maxZoom, this.actualZoom * Math.exp(adjustment)));
+
+    // 执行器速率限制：最大 3x zoom/秒（实测回稳受平滑限制而非速率，放宽以加快纠偏）
+    const MAX_SLEW_PER_SEC = 3.0;
+    const maxDelta = MAX_SLEW_PER_SEC * dt;
+    const slewLimited = Math.max(
+      this.lastOutputZoom - maxDelta,
+      Math.min(this.lastOutputZoom + maxDelta, desiredZoom)
+    );
+
+    // 输出 EMA（τ≈50ms）：把检测噪声导致的 zoom 指令阶梯抹平，
+    // 这是"放大时步进跳跃"的主要来源——指令本身平滑了画面才平滑。
+    // (70→50ms 再降延迟；回稳主要受平滑限制)
+    const OUTPUT_TAU = 0.05;
+    const outAlpha = dt / (OUTPUT_TAU + dt);
+    const outputZoom = this.lastOutputZoom + outAlpha * (slewLimited - this.lastOutputZoom);
 
     this.lastOutputZoom = outputZoom;
     this.lastDebug = {
-      faceW: facePixelSize, target: this.targetSize, error,
-      P, I, D, dt,
-      dMeasurement: this.lastFaceSize > 0 ? (facePixelSize - this.lastFaceSize) / dt : 0,
-      targetZoom: currentZoom * (1 + adjustment), output: outputZoom,
-      slewRate: 0, integral: this.integralError,
+      faceW: facePixelSize,
+      target,
+      error: logError,
+      P,
+      I,
+      D,
+      dt,
+      dMeasurement: rawDelta / dt,
+      targetZoom: desiredZoom,
+      output: outputZoom,
+      slewRate: maxDelta / dt,
+      integral: this.integralError,
     };
-    console.log(
-      '[PID] dt=' + dt.toFixed(3) + ' faceW=' + facePixelSize.toFixed(1) +
-      ' err=' + error.toFixed(4) + ' P=' + P.toFixed(4) + ' I=' + I.toFixed(4) +
-      ' D=' + D.toFixed(4) + ' adj=' + adjustment.toFixed(4) + ' out=' + outputZoom.toFixed(3)
-    );
+    if (now - this.lastLogTs > 50) {
+      this.lastLogTs = now;
+      // 高速率跟踪日志（仿真测量用）：faceW(控制器输入) / tgt(目标) / out(输出zoom)
+      console.log(
+        '[Track] faceW=' + facePixelSize.toFixed(1) +
+        ' tgt=' + target.toFixed(1) + ' out=' + outputZoom.toFixed(3) +
+        ' actual=' + this.actualZoom.toFixed(3) + ' desired=' + desiredZoom.toFixed(3)
+      );
+    }
 
     return outputZoom;
   }

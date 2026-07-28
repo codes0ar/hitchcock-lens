@@ -7,7 +7,7 @@
  *     → [Camera.startRecording] 录像中实时变焦 = dolly-zoom
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Alert } from 'react-native';
 
 import type { AppSettings } from './src/types';
@@ -23,6 +23,10 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 export default function App(): JSX.Element {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  /** PID 增益, slider 实时调节 */
+  const [pidKp, setPidKp] = useState(0.8);
+  const [pidKi, setPidKi] = useState(0.02);
+  const [pidKd, setPidKd] = useState(0.03);
   /** 录制时的黄色参考框(固定屏幕位置, 提示用户保持人脸居中+控制移动速度) */
   const [referenceBounds, setReferenceBounds] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
@@ -43,6 +47,7 @@ export default function App(): JSX.Element {
     toggleFacing,
     toggleFlash,
     setNormalizedZoom,
+    setZoomFromRatio,
     getCurrentZoomRatio,
     startRecording,
     stopRecording,
@@ -58,14 +63,16 @@ export default function App(): JSX.Element {
     faceDebug,
   } = useFaceDetection();
 
-  const { displayZoom, isLocked, debugInfo, resetZoom } = useZoomControl({
+  const { displayZoom, isLocked, debugInfo, resetZoom, setTargetSize } = useZoomControl({
     currentZoomRatio: getCurrentZoomRatio(),
     setNormalizedZoom,
     faceLockStatus: lockStatus,
     primaryFaceWidth,
-    settings,
     maxZoomRatio,
     minZoomRatio,
+    kp: pidKp,
+    ki: pidKi,
+    kd: pidKd,
   });
 
   const handleUpdateSettings = useCallback(
@@ -75,10 +82,17 @@ export default function App(): JSX.Element {
     []
   );
 
+  /** 手动解锁/手动调整 zoom 的时间戳（防止状态残留） */
+  const manualUnlockRef = useRef(0);
+
   const handleToggleRecording = useCallback(async () => {
     if (recordingStatus === 'idle') {
       // 捕获当前人脸框作为黄色参考(固定位置, 不随脸移动)
       setReferenceBounds(primaryFaceBounds);
+      // PID 目标直接用黄框宽度：控制回路 = 绿框宽 → 黄框宽
+      if (primaryFaceBounds && primaryFaceBounds.width > 0) {
+        setTargetSize(primaryFaceBounds.width);
+      }
       try {
         await startRecording();
       } catch (error) {
@@ -87,6 +101,10 @@ export default function App(): JSX.Element {
       }
     } else if (recordingStatus === 'recording') {
       setReferenceBounds(null);
+      // 停止录制后复位：清 PID 目标 + 解锁 + zoom 回 1x，避免卡在录制时的 zoom
+      manualUnlockRef.current = Date.now();
+      resetZoom();
+      unlock();
       try {
         const result = await stopRecording();
         console.log('[App] 录制完成:', result);
@@ -95,7 +113,7 @@ export default function App(): JSX.Element {
         Alert.alert('保存失败', '视频保存时出错');
       }
     }
-  }, [recordingStatus, startRecording, stopRecording, primaryFaceBounds]);
+  }, [recordingStatus, startRecording, stopRecording, primaryFaceBounds, setTargetSize, resetZoom, unlock]);
 
   const handleRequestPermission = useCallback(async () => {
     const granted = await requestAllPermissions();
@@ -104,16 +122,9 @@ export default function App(): JSX.Element {
     }
   }, [requestAllPermissions]);
 
-  // 人脸检测到后自动确认锁定（记录初始人脸尺寸作为 dolly-zoom 目标）
-  // 注意: 不依赖 primaryFaceWidth(每帧变会导致 timer 反复清除, 永远锁不上)
-  // 解锁后 2 秒内不自动重锁(给用户时间手动调整 zoom/构图)
-  const manualUnlockRef = useRef(0);
-  useEffect(() => {
-    if (lockStatus === 'detected' && !isLocked && Date.now() - manualUnlockRef.current > 2000) {
-      const timer = setTimeout(() => confirmLock(), 800);
-      return () => clearTimeout(timer);
-    }
-  }, [lockStatus, isLocked, confirmLock]);
+  // 注意: 已移除自动锁定。预览模式下 zoom 由手动 slider 控制，
+  // 锁定只通过 🔒 按钮显式触发；录制时自动以黄框尺寸为目标。
+  // 这样手动 zoom slider 不会被控制器覆写，也不会被自动锁定隐藏。
 
   /** 手动锁定/解锁切换 */
   const handleToggleLock = useCallback(() => {
@@ -125,6 +136,32 @@ export default function App(): JSX.Element {
       confirmLock(); // 锁定: 记录当前 faceW 为目标
     }
   }, [isLocked, resetZoom, unlock, confirmLock]);
+
+  /** 手动 zoom：用户拖动 slider 时优先于控制器（若处于锁定则先解锁） */
+  const handleManualZoom = useCallback(
+    (normalized: number) => {
+      if (isLocked) {
+        manualUnlockRef.current = Date.now();
+        resetZoom();
+        unlock();
+      }
+      setNormalizedZoom(normalized);
+    },
+    [isLocked, resetZoom, unlock, setNormalizedZoom]
+  );
+
+  /** 捏合缩放：按真实变焦倍数(1~4x)做乘法，避免归一化 0 基线导致 1x 时捏合无效 */
+  const handleManualZoomRatio = useCallback(
+    (ratio: number) => {
+      if (isLocked) {
+        manualUnlockRef.current = Date.now();
+        resetZoom();
+        unlock();
+      }
+      setZoomFromRatio(ratio);
+    },
+    [isLocked, resetZoom, unlock, setZoomFromRatio]
+  );
 
   return (
     <CameraScreen
@@ -146,13 +183,20 @@ export default function App(): JSX.Element {
       displayZoom={displayZoom}
       isLocked={isLocked}
       onToggleLock={handleToggleLock}
-      onManualZoom={setNormalizedZoom}
+      onManualZoom={handleManualZoom}
+      onManualZoomRatio={handleManualZoomRatio}
       debugInfo={debugInfo}
       faceDebug={faceDebug}
       onToggleFacing={toggleFacing}
       onToggleFlash={toggleFlash}
       settings={settings}
       onUpdateSettings={handleUpdateSettings}
+      pidKp={pidKp}
+      pidKi={pidKi}
+      pidKd={pidKd}
+      onUpdatePidKp={setPidKp}
+      onUpdatePidKi={setPidKi}
+      onUpdatePidKd={setPidKd}
       onRequestPermission={handleRequestPermission}
     />
   );

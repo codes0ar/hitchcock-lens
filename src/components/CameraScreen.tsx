@@ -7,7 +7,7 @@
  * autoMode=true 使 bounds 直接为屏幕坐标，绿框无需手动映射。
  */
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -15,10 +15,10 @@ import {
   StatusBar,
   Text,
   TouchableOpacity,
-  Dimensions,
   ActivityIndicator,
   PanResponder,
-  LayoutChangeEvent,
+  AppState,
+  useWindowDimensions,
 } from 'react-native';
 import {
   Camera,
@@ -27,6 +27,7 @@ import {
 } from 'react-native-vision-camera';
 import { useRunOnJS } from 'react-native-worklets-core';
 import { useFaceDetector, type Face, type FrameFaceDetectionOptions } from 'react-native-vision-camera-face-detector';
+import { Accelerometer } from 'expo-sensors';
 
 import type { FaceLockStatus, RecordingStatus, AppSettings, CameraFacing } from '../types';
 import type { PIDDebug } from '../utils/ZoomController';
@@ -35,7 +36,44 @@ import { FaceLockIndicator } from './FaceLockIndicator';
 import { ZoomDisplay } from './ZoomDisplay';
 import { SettingsPanel } from './SettingsPanel';
 
-const { width: WIN_W, height: WIN_H } = Dimensions.get('window');
+type BoxBounds = { x: number; y: number; width: number; height: number };
+
+/**
+ * 复制 face-detector 原生 autoMode 的"后摄"缩放+旋转公式，
+ * 但 orientation 改用我们自己用加速度计测到的物理方向（原生监听器在本机不触发）。
+ * raw 为 autoMode=false 返回的图像坐标框（imageW×imageH）。
+ */
+function processBox(
+  raw: BoxBounds,
+  orientation: number, // 0 / 90 / 180 / 270
+  winW: number,
+  winH: number,
+  imageW: number,
+  imageH: number
+): BoxBounds {
+  // 与原生一致：sourceWidth=image.height, sourceHeight=image.width（带维度交换）
+  const sourceWidth = imageH;
+  const sourceHeight = imageW;
+  const scaleX = winW / sourceWidth;
+  const scaleY = winH / sourceHeight;
+  const w = raw.width * scaleX;
+  const h = raw.height * scaleY;
+  const x = raw.x;
+  const y = raw.y;
+  let bx = x * scaleX;
+  let by = y * scaleY;
+  if (orientation === 270) {
+    bx = y * scaleX;
+    by = (sourceHeight - x) * scaleY - h;
+  } else if (orientation === 90) {
+    bx = (sourceWidth - y) * scaleX - w;
+    by = x * scaleY;
+  } else if (orientation === 180) {
+    bx = (sourceWidth - x) * scaleX - w;
+    by = (sourceHeight - y) * scaleY - h;
+  }
+  return { x: bx, y: by, width: w, height: h };
+}
 
 interface CameraScreenProps {
   cameraRef: React.RefObject<Camera | null>;
@@ -58,12 +96,20 @@ interface CameraScreenProps {
   isLocked: boolean;
   onToggleLock: () => void;
   onManualZoom: (normalized: number) => void;
+  /** 捏合缩放：按真实变焦倍数(1~maxX)做乘法 */
+  onManualZoomRatio: (ratio: number) => void;
   debugInfo: PIDDebug | null;
   faceDebug: { eyeDist: number; avgMetric: number; boundsW: number; hasLandmark: boolean } | null;
   onToggleFacing: () => void;
   onToggleFlash: () => void;
   settings: AppSettings;
   onUpdateSettings: (settings: Partial<AppSettings>) => void;
+  pidKp: number;
+  pidKi: number;
+  pidKd: number;
+  onUpdatePidKp: (v: number) => void;
+  onUpdatePidKi: (v: number) => void;
+  onUpdatePidKd: (v: number) => void;
   onRequestPermission: () => void;
 }
 
@@ -72,7 +118,6 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
   device,
   facing,
   zoom,
-  zoomNormalized,
   isTorchOn,
   hasPermission,
   cameraReady,
@@ -93,31 +138,102 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
   onToggleFlash,
   settings,
   onUpdateSettings,
+  pidKp,
+  pidKi,
+  pidKd,
+  onUpdatePidKp,
+  onUpdatePidKi,
+  onUpdatePidKd,
   onRequestPermission,
+  onManualZoomRatio,
 }) => {
-  const detector = useFaceDetector({
-    performanceMode: 'fast',
-    landmarkMode: 'all',
-    contourMode: 'none',
-    classificationMode: 'none',
-    trackingEnabled: true,
-    autoMode: true,
-    windowWidth: WIN_W,
-    windowHeight: WIN_H,
-    cameraFacing: facing,
-  } as FrameFaceDetectionOptions);
+  // 实验：autoMode=false 拿原始帧坐标，日志打印原始框，验证检测库给的坐标系
+  const { width: winW, height: winH } = useWindowDimensions();
+  const detectorOptions = useMemo(
+    () =>
+      ({
+        performanceMode: 'fast',
+        landmarkMode: 'none',
+        contourMode: 'none',
+        classificationMode: 'none',
+        trackingEnabled: true,
+        autoMode: false,
+        minFaceSize: 0.05, // 最小人脸比例从默认 0.15 降到 0.05，让更远/更小的人脸也能被检出
+        cameraFacing: facing,
+      } as FrameFaceDetectionOptions),
+    [facing]
+  );
+  const detector = useFaceDetector(detectorOptions);
 
-  // worklet → JS：把检测到的人脸(JSON)扔回 JS 线程更新 state
+  // === 加速度计测设备物理方向（替代原生方向监听器，本机它不触发）===
+  const [deviceRotation, setDeviceRotation] = useState(0); // 0/90/180/270
+  const deviceRotationRef = useRef(0);
+  const accelLogTs = useRef(0);
+  useEffect(() => {
+    Accelerometer.setUpdateInterval(200);
+    const sub = Accelerometer.addListener(({ x, y, z }) => {
+      // 低通滤波
+      const gx = x, gy = y;
+      let rot = deviceRotationRef.current;
+      if (Math.abs(gy) >= Math.abs(gx)) {
+        rot = gy < -2 ? 0 : gy > 2 ? 180 : rot;
+      } else {
+        rot = gx > 2 ? 270 : gx < -2 ? 90 : rot;
+      }
+      if (rot !== deviceRotationRef.current) {
+        deviceRotationRef.current = rot;
+        setDeviceRotation(rot);
+      }
+      const now = Date.now();
+      if (now - accelLogTs.current > 1000) {
+        accelLogTs.current = now;
+        console.log(`[Accel] x=${x.toFixed(2)} y=${y.toFixed(2)} z=${z.toFixed(2)} rot=${rot}`);
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
+  // 记录最近一次帧方向/尺寸，用于 debug 面板核对映射是否正确
+  const [oriDebug, setOriDebug] = useState('?');
+  const diagLogTs = useRef(0);
+
+  // worklet → JS：把检测到的人脸(图像坐标)扔回 JS 线程，用加速度计方向做缩放+旋转映射
   const sendFacesToJs = useRunOnJS(
-    (facesJson: string) => {
+    (payloadJson: string) => {
       try {
-        const faces = JSON.parse(facesJson) as Face[];
-        onFacesDetected(faces);
+        const payload = JSON.parse(payloadJson) as {
+          faces: Face[];
+          orientation: string;
+          frameWidth: number;
+          frameHeight: number;
+          isMirrored: boolean;
+        };
+        setOriDebug(`${deviceRotationRef.current} ${payload.frameWidth}x${payload.frameHeight}`);
+        const rot = deviceRotationRef.current;
+        const mapped = payload.faces.map((f) => ({
+          ...f,
+          bounds: processBox(f.bounds, rot, winW, winH, payload.frameWidth, payload.frameHeight),
+        }));
+        // 诊断日志：方向 + 原始框 + 映射后框（每秒一条，adb 可读）
+        const now = Date.now();
+        if (now - diagLogTs.current > 1000) {
+          diagLogTs.current = now;
+          const f = payload.faces[0];
+          const m = mapped[0];
+          console.log(
+            `[Map] rot=${rot} win=${winW.toFixed(0)}x${winH.toFixed(0)} frame=${payload.frameWidth}x${payload.frameHeight}` +
+            (f && m
+              ? ` raw=(${f.bounds.x.toFixed(0)},${f.bounds.y.toFixed(0)},${f.bounds.width.toFixed(0)}x${f.bounds.height.toFixed(0)})` +
+                ` -> box=(${m.bounds.x.toFixed(0)},${m.bounds.y.toFixed(0)},${m.bounds.width.toFixed(0)}x${m.bounds.height.toFixed(0)})`
+              : ' no-face')
+          );
+        }
+        onFacesDetected(mapped);
       } catch (e) {
         // ignore parse error
       }
     },
-    [onFacesDetected]
+    [onFacesDetected, winW, winH]
   );
 
   const frameProcessor = useFrameProcessor(
@@ -125,7 +241,15 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
       'worklet';
       try {
         const faces = detector.detectFaces(frame);
-        sendFacesToJs(JSON.stringify(faces));
+        sendFacesToJs(
+          JSON.stringify({
+            faces,
+            orientation: frame.orientation,
+            frameWidth: frame.width,
+            frameHeight: frame.height,
+            isMirrored: frame.isMirrored,
+          })
+        );
       } catch (e) {
         // 检测错误不上报以免刷屏
       }
@@ -133,41 +257,62 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
     [detector, sendFacesToJs]
   );
 
-  // 自动居中: EMA 平滑偏移, 高倍数时数字平移保持人脸居中(zoom≤1 时不裁剪)
-  const [center, setCenter] = useState({ scale: 1, dx: 0, dy: 0, gain: 0 });
-  const smoothDxRef = useRef(0);
-  const smoothDyRef = useRef(0);
+  // App 前后台状态：后台/锁屏时关闭相机，回前台时重新激活，
+  // 强制 vision-camera 重建会话，修复"回桌面+锁屏后重新进入黑屏"的问题。
+  const [appActive, setAppActive] = useState(true);
   useEffect(() => {
-    const gain = Math.max(0, Math.min(1, (zoom - 1) / 3)); // 0@1x, 1@4x+
-    const scale = 1 + 0.15 * gain;
-    let tdx = 0;
-    let tdy = 0;
-    if (faceBounds && faceBounds.width > 0 && gain > 0) {
-      const fx = faceBounds.x + faceBounds.width / 2;
-      const fy = faceBounds.y + faceBounds.height / 2;
-      tdx = -scale * (fx - WIN_W / 2) * gain;
-      tdy = -scale * (fy - WIN_H / 2) * gain;
-      const maxDx = WIN_W * 0.07 * gain;
-      const maxDy = WIN_H * 0.07 * gain;
-      tdx = Math.max(-maxDx, Math.min(maxDx, tdx));
-      tdy = Math.max(-maxDy, Math.min(maxDy, tdy));
-    } else {
-      smoothDxRef.current = 0;
-      smoothDyRef.current = 0;
-    }
-    // EMA 平滑(0.2/帧): 抑制 high-zoom 检测噪声导致的中心抖动
-    smoothDxRef.current += (tdx - smoothDxRef.current) * 0.2;
-    smoothDyRef.current += (tdy - smoothDyRef.current) * 0.2;
-    setCenter({ scale, dx: smoothDxRef.current, dy: smoothDyRef.current, gain });
-  }, [faceBounds, zoom]);
+    const sub = AppState.addEventListener('change', (state) => {
+      setAppActive(state === 'active');
+    });
+    return () => sub.remove();
+  }, []);
 
-  // 手动 zoom 滑块(解锁时可用): 触摸/拖动设定 zoom
-  const sliderHeightRef = useRef(0);
-  const onSliderTouch = (evt: { nativeEvent: { locationY: number } }) => {
-    if (sliderHeightRef.current <= 0) return;
-    const y = evt.nativeEvent.locationY;
-    const normalized = Math.max(0, Math.min(1, 1 - y / sliderHeightRef.current));
-    onManualZoom(normalized);
+  // 双指捏合缩放(预览未锁定且未录制时可用; 无人脸也可用, 因为不依赖锁定)
+  // 基准用真实变焦倍数 zoom(1~maxX) 做乘法：归一化 0~1 在 1x 时是 0，乘法会恒为 0（旧 bug）
+  const zoomFactorRef = useRef(zoom);
+  useEffect(() => { zoomFactorRef.current = zoom; }, [zoom]);
+  const isLockedRef = useRef(isLocked);
+  useEffect(() => { isLockedRef.current = isLocked; }, [isLocked]);
+  const recStatusRef = useRef(recordingStatus);
+  useEffect(() => { recStatusRef.current = recordingStatus; }, [recordingStatus]);
+  const pinchRef = useRef({ initialDist: 0, initialZoom: 0 });
+  const smoothRatioRef = useRef(0);
+  // 捏合调试：实时显示触点数和系数，用于追溯为什么捏合不生效
+  const [pinchDebug, setPinchDebug] = useState({ touches: 0, factor: 0 });
+  // 用根容器原生 onTouch* 事件（与 zoom slider 同一套机制，直接读 touches 数组）。
+  const handlePinchTouch = (evt: { nativeEvent: { touches: Array<{ pageX: number; pageY: number }> } }) => {
+    const t = evt.nativeEvent.touches;
+    if (t.length >= 2) {
+      const dist = Math.hypot(t[0].pageX - t[1].pageX, t[0].pageY - t[1].pageY);
+      if (isLockedRef.current || recStatusRef.current === 'recording') {
+        setPinchDebug({ touches: t.length, factor: -1 }); // -1 = 被锁定/录制门挡住
+        return;
+      }
+      if (pinchRef.current.initialDist <= 0) {
+        pinchRef.current.initialDist = dist;
+        pinchRef.current.initialZoom = zoomFactorRef.current; // 真实倍数 1~maxX
+        smoothRatioRef.current = zoomFactorRef.current;
+        setPinchDebug({ touches: t.length, factor: 1 });
+        return;
+      }
+      const factor = dist / pinchRef.current.initialDist;
+      const targetRatio = pinchRef.current.initialZoom * factor;
+      // EMA 平滑，让捏合 zoom 不跳
+      smoothRatioRef.current += (targetRatio - smoothRatioRef.current) * 0.35;
+      setPinchDebug({ touches: t.length, factor });
+      onManualZoomRatio(smoothRatioRef.current);
+    } else {
+      if (pinchRef.current.initialDist > 0 || pinchDebug.touches !== 0) {
+        setPinchDebug({ touches: t.length, factor: 0 });
+      }
+      pinchRef.current.initialDist = 0;
+      smoothRatioRef.current = 0;
+    }
+  };
+  const resetPinch = () => {
+    pinchRef.current.initialDist = 0;
+    smoothRatioRef.current = 0;
+    setPinchDebug({ touches: 0, factor: 0 });
   };
 
   if (!hasPermission) {
@@ -186,15 +331,24 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      style={styles.container}
+      onTouchStart={handlePinchTouch}
+      onTouchMove={handlePinchTouch}
+      onTouchEnd={resetPinch}
+      onTouchCancel={resetPinch}
+    >
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
+      {/* === 相机预览（本机 SurfaceView 不跟 transform/布局偏移，稳像已放弃；固定全屏） === */}
       {device ? (
         <Camera
           ref={cameraRef as React.RefObject<Camera>}
-          style={[styles.camera, { transform: [{ scale: center.scale }, { translateX: center.dx }, { translateY: center.dy }] }]}
+          style={styles.camera}
           device={device}
-          isActive
+          isActive={appActive}
+          audio={true}
+          videoStabilizationMode="off"
           zoom={zoom}
           torch={isTorchOn ? 'on' : 'off'}
           onInitialized={onCameraReady}
@@ -208,7 +362,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
         </View>
       )}
 
-      {/* === 人脸检测框叠加（绿框，autoMode 已是屏幕坐标，随人脸大小变化） === */}
+      {/* === 人脸检测框叠加（绿框，autoMode 屏幕坐标，直接贴脸，无任何变换） === */}
       {faceBounds && faceBounds.width > 0 && (
         <View
           pointerEvents="none"
@@ -242,26 +396,21 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
         />
       )}
 
-      {/* === 中心准星(自动居中激活时显示) === */}
-      {center.gain > 0 && (
-        <View style={styles.centerReticle} pointerEvents="none">
-          <View style={styles.reticleH} />
-          <View style={styles.reticleV} />
-        </View>
-      )}
-
       {/* === DEBUG 信息面板(on-screen overlay) === */}
       <View style={styles.debugOverlay} pointerEvents="none">
         <Text style={styles.debugText}>
-          <Text style={styles.debugTitle}>● DEBUG Kp:0.30 Ki:0.02 Kd:0.00</Text>{'\n'}
+          <Text style={styles.debugTitle}>● Kp:{pidKp.toFixed(2)} Ki:{pidKi.toFixed(3)} Kd:{pidKd.toFixed(3)}</Text>{'\n'}
           lock:{isLocked ? 'Y' : 'N'} zoom:{displayZoom.toFixed(2)}x{'\n'}
+          pinch:{pinchDebug.touches} f:{pinchDebug.factor.toFixed(2)}{'\n'}
+          win:{winW.toFixed(0)}x{winH.toFixed(0)}{'\n'}
+          ori:{oriDebug}{'\n'}
           {faceDebug ? `eye:${faceDebug.eyeDist.toFixed(0)} avg:${faceDebug.avgMetric.toFixed(0)} bw:${faceDebug.boundsW.toFixed(0)} lm:${faceDebug.hasLandmark ? 'Y' : 'N'}` : 'no-face'}{'\n'}
           {debugInfo ? `tgt:${debugInfo.target.toFixed(0)} faceW:${debugInfo.faceW.toFixed(1)}` : ''}{'\n'}
           {debugInfo ? `err:${debugInfo.error.toFixed(4)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
-          {debugInfo ? `P:${debugInfo.P.toFixed(4)} I:${debugInfo.I.toFixed(4)} D:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
-          {debugInfo ? `dMeas:${debugInfo.dMeasurement.toFixed(1)} intg:${debugInfo.integral.toFixed(3)}` : ''}{'\n'}
+          {debugInfo ? `Kp*e:${debugInfo.P.toFixed(4)} Ki*∫:${debugInfo.I.toFixed(4)} Kd*de:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
+          {debugInfo ? `dMeas:${debugInfo.dMeasurement.toFixed(1)} ∫e:${debugInfo.integral.toFixed(3)}` : ''}{'\n'}
           {debugInfo ? `out:${debugInfo.output.toFixed(3)}x` : ''}{'\n'}
-          v1.0.0
+          v4.3
         </Text>
       </View>
 
@@ -300,22 +449,6 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
         </View>
       </View>
 
-      {/* === 右侧手动 zoom 滑块(解锁时可用) === */}
-      {!isLocked && (
-        <View style={styles.zoomSlider} pointerEvents="box-none">
-          <Text style={styles.zoomSliderLabel}>{zoom.toFixed(1)}x</Text>
-          <View
-            style={styles.zoomSliderTrack}
-            onLayout={(e) => { sliderHeightRef.current = e.nativeEvent.layout.height; }}
-            onTouchStart={onSliderTouch}
-            onTouchMove={onSliderTouch}
-          >
-            <View style={[styles.zoomSliderFill, { height: `${Math.round(zoomNormalized * 100)}%` }]} />
-            <View style={[styles.zoomSliderHandle, { bottom: `${Math.round(zoomNormalized * 100)}%` }]} />
-          </View>
-        </View>
-      )}
-
       {/* === 中央: 人脸锁定指示器 === */}
       <View style={styles.centerOverlay} pointerEvents="none">
         <FaceLockIndicator lockStatus={faceLockStatus} faceWidth={displayZoom > 1 ? 1 : 0} />
@@ -325,7 +458,8 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
       <View style={styles.bottomControls} pointerEvents="box-none">
         <ZoomDisplay zoomRatio={displayZoom} />
         <RecordButton recordingStatus={recordingStatus} onPress={onToggleRecording} />
-        <SettingsPanel settings={settings} onUpdateSettings={onUpdateSettings} />
+        <SettingsPanel pidKp={pidKp} pidKi={pidKi} pidKd={pidKd}
+          onUpdatePidKp={onUpdatePidKp} onUpdatePidKi={onUpdatePidKi} onUpdatePidKd={onUpdatePidKd} />
       </View>
     </SafeAreaView>
   );
@@ -355,14 +489,6 @@ const styles = StyleSheet.create({
   recordingText: { color: '#fff', fontSize: 13, fontWeight: '500' },
   centerOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', zIndex: 5 },
   bottomControls: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingBottom: 40, paddingHorizontal: 20, zIndex: 10, alignItems: 'center' },
-  centerReticle: { position: 'absolute', left: WIN_W / 2 - 15, top: WIN_H / 2 - 15, width: 30, height: 30, zIndex: 6 },
-  reticleH: { position: 'absolute', left: 0, top: 14, width: 30, height: 2, backgroundColor: 'rgba(255,255,255,0.7)' },
-  reticleV: { position: 'absolute', left: 14, top: 0, width: 2, height: 30, backgroundColor: 'rgba(255,255,255,0.7)' },
-  zoomSlider: { position: 'absolute', right: 16, top: 140, bottom: 140, width: 44, alignItems: 'center', zIndex: 8 },
-  zoomSliderLabel: { color: '#fff', fontSize: 12, fontWeight: '700', marginBottom: 6, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
-  zoomSliderTrack: { flex: 1, width: 28, backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', justifyContent: 'flex-end', overflow: 'hidden' },
-  zoomSliderFill: { width: '100%', backgroundColor: 'rgba(255,255,255,0.25)', position: 'absolute', bottom: 0 },
-  zoomSliderHandle: { width: 28, height: 4, backgroundColor: '#fff', position: 'absolute', borderRadius: 2 },
   debugOverlay: { position: 'absolute', left: 8, top: 60, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, zIndex: 20, maxWidth: 240 },
   debugText: { color: '#0F0', fontSize: 10, fontFamily: 'monospace', lineHeight: 13 },
   debugTitle: { color: '#FF0', fontSize: 10, fontFamily: 'monospace', fontWeight: '700' },

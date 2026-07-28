@@ -94,7 +94,7 @@ export const FaceLockIndicator: React.FC<FaceLockIndicatorProps> = ({
             >
               <Text style={styles.icon}>🔍</Text>
             </Animated.View>
-            <Text style={styles.detectedText}>检测到人脸，锁定中...</Text>
+            <Text style={styles.detectedText}>检测到人脸，点击 🔒 锁定</Text>
           </View>
         );
 

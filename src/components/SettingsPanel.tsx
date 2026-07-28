@@ -1,383 +1,235 @@
 /**
- * SettingsPanel.tsx — 设置面板组件
+ * SettingsPanel.tsx — PID 增益调节面板
  *
- * 职责: 底部弹出式设置面板，包含:
- * - 灵敏度调节滑块（控制zoom响应速度）
- * - 平滑度调节滑块（控制EMA平滑系数，防止抖动）
+ * 注意：
+ * 1. 不使用 RN Modal（华为设备上 SurfaceView 图层会盖住 Dialog），
+ *    面板在主视图层级渲染，保证显示在视频之上。
+ * 2. slider 使用与右侧 zoom slider 相同的 onTouchStart/onTouchMove + locationX
+ *    方案（已在真机验证可用），不再依赖原生 Slider 组件。
+ * 3. 每个参数带 −/＋ 微调按钮兜底。
+ * 4. 面板打开时隐藏 ⚙️ 按钮，避免遮挡面板内容。
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   View,
   Text,
   TouchableOpacity,
-  Modal,
-  Animated,
-  Easing,
-  ScrollView,
   Dimensions,
-  GestureResponderEvent,
 } from 'react-native';
-
-import type { AppSettings } from '../types';
-
-/** 设置面板 Props */
-interface SettingsPanelProps {
-  /** 当前设置值 */
-  settings: AppSettings;
-  /** 设置变更回调 */
-  onUpdateSettings: (settings: Partial<AppSettings>) => void;
-}
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-/**
- * 自定义滑块组件
- * （使用 Touchable 实现，不依赖外部库）
- */
-interface CustomSliderProps {
+interface PidSliderProps {
   label: string;
   value: number;
   minimumValue: number;
   maximumValue: number;
+  step: number;
+  digits: number;
   onValueChange: (value: number) => void;
-  step?: number;
   description?: string;
 }
 
-const CustomSlider: React.FC<CustomSliderProps> = ({
+const PidSlider: React.FC<PidSliderProps> = ({
   label,
   value,
   minimumValue,
   maximumValue,
+  step,
+  digits,
   onValueChange,
-  step = 0.01,
   description,
 }) => {
-  // 计算百分比位置
   const progress = (value - minimumValue) / (maximumValue - minimumValue);
+  const trackWidthRef = useRef(0);
 
-  // 处理滑块条上的触摸
-  const handleBarPress = useCallback(
-    (event: GestureResponderEvent) => {
-      const { locationX } = event.nativeEvent;
-      // 假设滑块条宽度约为 SCREEN_WIDTH - 80（左右padding）
-      const sliderWidth = Dimensions.get('window').width - 80;
-      const ratio = Math.max(0, Math.min(1, locationX / sliderWidth));
+  // 与主界面 zoom slider 相同的触摸方案：locationX 相对轨道，无需 measureInWindow
+  const handleTouch = useCallback(
+    (evt: { nativeEvent: { locationX: number } }) => {
+      if (trackWidthRef.current <= 0) return;
+      const ratio = Math.max(0, Math.min(1, evt.nativeEvent.locationX / trackWidthRef.current));
       const newValue = minimumValue + ratio * (maximumValue - minimumValue);
-
-      // 根据step取整
-      const steppedValue = Math.round(newValue / step) * step;
-      const clampedValue = Math.max(
-        minimumValue,
-        Math.min(maximumValue, steppedValue)
-      );
-
-      onValueChange(parseFloat(clampedValue.toFixed(2)));
+      const stepped = Math.round(newValue / step) * step;
+      const clamped = Math.max(minimumValue, Math.min(maximumValue, stepped));
+      onValueChange(parseFloat(clamped.toFixed(digits)));
     },
-    [minimumValue, maximumValue, step, onValueChange]
+    [minimumValue, maximumValue, step, digits, onValueChange]
+  );
+
+  const clampStep = useCallback(
+    (dir: 1 | -1) => {
+      const next = Math.max(minimumValue, Math.min(maximumValue, value + dir * step));
+      onValueChange(parseFloat(next.toFixed(digits)));
+    },
+    [value, minimumValue, maximumValue, step, digits, onValueChange]
   );
 
   return (
     <View style={sliderStyles.container}>
       <View style={sliderStyles.labelRow}>
         <Text style={sliderStyles.label}>{label}</Text>
-        <Text style={sliderStyles.value}>{value.toFixed(2)}</Text>
+        <View style={sliderStyles.valueRow}>
+          <TouchableOpacity style={sliderStyles.stepButton} onPress={() => clampStep(-1)}>
+            <Text style={sliderStyles.stepButtonText}>−</Text>
+          </TouchableOpacity>
+          <Text style={sliderStyles.value}>{value.toFixed(digits)}</Text>
+          <TouchableOpacity style={sliderStyles.stepButton} onPress={() => clampStep(1)}>
+            <Text style={sliderStyles.stepButtonText}>＋</Text>
+          </TouchableOpacity>
+        </View>
       </View>
       {description && (
         <Text style={sliderStyles.description}>{description}</Text>
       )}
-      <TouchableOpacity
+      <View
         style={sliderStyles.track}
-        onPress={handleBarPress}
-        activeOpacity={1}
+        onLayout={(e) => { trackWidthRef.current = e.nativeEvent.layout.width; }}
+        onTouchStart={handleTouch}
+        onTouchMove={handleTouch}
       >
-        {/* 已填充部分 */}
-        <View
-          style={[
-            sliderStyles.fill,
-            { width: `${progress * 100}%` },
-          ]}
-        />
-        {/* 滑块按钮 */}
-        <View
-          style={[
-            sliderStyles.thumb,
-            { left: `${progress * 100}%`, marginLeft: -12 },
-          ]}
-        />
-      </TouchableOpacity>
+        <View pointerEvents="none" style={[sliderStyles.fill, { width: `${progress * 100}%` }]} />
+        <View pointerEvents="none" style={[sliderStyles.thumb, { left: `${progress * 100}%`, marginLeft: -8 }]} />
+      </View>
     </View>
   );
 };
 
-/**
- * 设置面板组件
- * 通过底部弹窗展示设置选项
- */
+interface SettingsPanelProps {
+  pidKp: number;
+  pidKi: number;
+  pidKd: number;
+  onUpdatePidKp: (v: number) => void;
+  onUpdatePidKi: (v: number) => void;
+  onUpdatePidKd: (v: number) => void;
+}
+
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
-  settings,
-  onUpdateSettings,
+  pidKp,
+  pidKi,
+  pidKd,
+  onUpdatePidKp,
+  onUpdatePidKi,
+  onUpdatePidKd,
 }) => {
   const [visible, setVisible] = useState(false);
-  const slideAnim = React.useRef(new Animated.Value(SCREEN_HEIGHT)).current;
 
-  // 打开面板动画
   const openPanel = useCallback(() => {
+    console.log('[SettingsPanel] openPanel');
     setVisible(true);
-    Animated.timing(slideAnim, {
-      toValue: 0,
-      duration: 300,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [slideAnim]);
+  }, []);
 
-  // 关闭面板动画
   const closePanel = useCallback(() => {
-    Animated.timing(slideAnim, {
-      toValue: SCREEN_HEIGHT,
-      duration: 250,
-      easing: Easing.in(Easing.cubic),
-      useNativeDriver: true,
-    }).start(() => {
-      setVisible(false);
-    });
-  }, [slideAnim]);
-
-  // 处理灵敏度变更
-  const handleSensitivityChange = useCallback(
-    (value: number) => {
-      onUpdateSettings({ sensitivity: value });
-    },
-    [onUpdateSettings]
-  );
-
-  // 处理平滑度变更
-  const handleSmoothnessChange = useCallback(
-    (value: number) => {
-      onUpdateSettings({ smoothness: value });
-    },
-    [onUpdateSettings]
-  );
+    console.log('[SettingsPanel] closePanel');
+    setVisible(false);
+  }, []);
 
   return (
     <>
-      {/* 设置按钮 */}
-      <TouchableOpacity
-        style={styles.settingsButton}
-        onPress={openPanel}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.settingsIcon}>⚙️</Text>
-      </TouchableOpacity>
+      {!visible && (
+        <TouchableOpacity style={styles.settingsButton} onPress={openPanel} activeOpacity={0.7}>
+          <Text style={styles.settingsIcon}>⚙️</Text>
+        </TouchableOpacity>
+      )}
 
-      {/* 设置面板弹窗 */}
-      <Modal
-        visible={visible}
-        transparent
-        animationType="none"
-        onRequestClose={closePanel}
-      >
-        <View style={styles.modalOverlay}>
-          {/* 点击背景关闭 */}
-          <TouchableOpacity
-            style={styles.overlayTouchable}
-            onPress={closePanel}
-            activeOpacity={1}
-          />
-
-          {/* 滑出面板 */}
-          <Animated.View
-            style={[
-              styles.panel,
-              { transform: [{ translateY: slideAnim }] },
-            ]}
-          >
-            {/* 面板把手 */}
+      {visible && (
+        <>
+          {/* 遮罩：负边距抵消 bottomControls 的 paddingHorizontal，覆盖全屏 */}
+          <TouchableOpacity style={styles.backdrop} onPress={closePanel} activeOpacity={1} />
+          <View style={styles.panel}>
             <View style={styles.handle} />
-
-            {/* 标题栏 */}
             <View style={styles.header}>
-              <Text style={styles.title}>设置</Text>
-              <TouchableOpacity onPress={closePanel} activeOpacity={0.7}>
+              <Text style={styles.title}>PID 增益调节</Text>
+              <TouchableOpacity onPress={closePanel} activeOpacity={0.7} style={styles.closeHit}>
                 <Text style={styles.closeButton}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-              {/* 灵敏度滑块 */}
-              <CustomSlider
-                label="灵敏度"
-                value={settings.sensitivity}
-                minimumValue={0.05}
-                maximumValue={0.5}
+            {/* 内容较短，不用 ScrollView，避免拦截 slider 触摸 */}
+            <View style={styles.content}>
+              <PidSlider
+                label="Kp (比例)"
+                value={pidKp}
+                minimumValue={0.1}
+                maximumValue={1.0}
                 step={0.01}
-                onValueChange={handleSensitivityChange}
-                description="控制变焦对人脸大小变化的响应速度"
+                digits={2}
+                onValueChange={onUpdatePidKp}
+                description="越大响应越快, 太大震荡"
               />
 
-              {/* 平滑度滑块 */}
-              <CustomSlider
-                label="平滑度"
-                value={settings.smoothness}
-                minimumValue={0.01}
-                maximumValue={0.5}
-                step={0.01}
-                onValueChange={handleSmoothnessChange}
-                description="控制变焦过渡的平滑程度，值越大越平滑"
+              <PidSlider
+                label="Ki (积分)"
+                value={pidKi}
+                minimumValue={0.0}
+                maximumValue={0.1}
+                step={0.001}
+                digits={3}
+                onValueChange={onUpdatePidKi}
+                description="消除稳态误差, 过大过冲"
               />
 
-              {/* 说明文字 */}
+              <PidSlider
+                label="Kd (微分)"
+                value={pidKd}
+                minimumValue={0.0}
+                maximumValue={0.1}
+                step={0.001}
+                digits={3}
+                onValueChange={onUpdatePidKd}
+                description="抑制震荡, 噪声敏感"
+              />
+
               <View style={styles.infoSection}>
-                <Text style={styles.infoTitle}>使用提示</Text>
-                <Text style={styles.infoText}>
-                  • 走近被摄人物时，APP会自动调整zoom保持人脸大小不变{'\n'}
-                  • 背景将产生经典的希区柯克拉伸效果{'\n'}
-                  • 灵敏度越高响应越快，但可能产生抖动{'\n'}
-                  • 平滑度越高画面越稳定，但响应略有延迟
-                </Text>
+                <Text style={styles.infoTitle}>默认值</Text>
+                <Text style={styles.infoText}>Kp=0.50  Ki=0.02  Kd=0.00</Text>
+                <Text style={styles.infoHint}>slider 或 −/＋ 按钮即时生效</Text>
               </View>
-            </ScrollView>
-          </Animated.View>
-        </View>
-      </Modal>
+
+              <TouchableOpacity style={styles.doneButton} onPress={closePanel} activeOpacity={0.8}>
+                <Text style={styles.doneButtonText}>完成</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </>
+      )}
     </>
   );
 };
 
-/** 主样式 */
 const styles = StyleSheet.create({
-  settingsButton: {
-    position: 'absolute',
-    right: 10,
-    bottom: 60,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  settingsIcon: {
-    fontSize: 22,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  overlayTouchable: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  panel: {
-    backgroundColor: '#1C1C1E',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 20,
-    paddingBottom: 40,
-    maxHeight: SCREEN_HEIGHT * 0.6,
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#555',
-    alignSelf: 'center',
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  title: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  closeButton: {
-    color: '#aaa',
-    fontSize: 20,
-    fontWeight: '600',
-    padding: 4,
-  },
-  content: {
-    flex: 1,
-  },
-  infoSection: {
-    marginTop: 24,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#333',
-  },
-  infoTitle: {
-    color: '#aaa',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  infoText: {
-    color: '#777',
-    fontSize: 13,
-    lineHeight: 20,
-  },
+  settingsButton: { position: 'absolute', right: 10, bottom: 60, width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', zIndex: 32 },
+  settingsIcon: { fontSize: 22 },
+  // 遮罩与面板渲染在主视图层级(bottomControls 内)，left/right 负边距抵消父容器 padding
+  backdrop: { position: 'absolute', left: -20, right: -20, bottom: 0, height: SCREEN_HEIGHT, backgroundColor: 'rgba(0,0,0,0.08)', zIndex: 30 },
+  // 紧凑卡片：debug 窗大小，居中置于屏幕下方，半透明不挡取景
+  panel: { position: 'absolute', bottom: 0, alignSelf: 'center', width: 300, backgroundColor: 'rgba(20,20,24,0.6)', borderRadius: 14, paddingHorizontal: 14, paddingTop: 4, paddingBottom: 12, zIndex: 31 },
+  handle: { width: 32, height: 3, borderRadius: 2, backgroundColor: '#555', alignSelf: 'center', marginTop: 6, marginBottom: 6 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  title: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  closeHit: { padding: 6, marginRight: -6 },
+  closeButton: { color: '#aaa', fontSize: 16, fontWeight: '600' },
+  content: {},
+  infoSection: { marginTop: 4, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#333' },
+  infoTitle: { color: '#aaa', fontSize: 11, fontWeight: '600', marginBottom: 2 },
+  infoText: { color: '#777', fontSize: 11, lineHeight: 15 },
+  infoHint: { color: '#555', fontSize: 10, marginTop: 3 },
+  doneButton: { marginTop: 8, backgroundColor: '#007AFF', borderRadius: 8, paddingVertical: 8, alignItems: 'center' },
+  doneButtonText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 });
 
-/** 滑块样式 */
 const sliderStyles = StyleSheet.create({
-  container: {
-    marginBottom: 24,
-  },
-  labelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  label: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  value: {
-    color: '#007AFF',
-    fontSize: 16,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-  },
-  description: {
-    color: '#777',
-    fontSize: 12,
-    marginBottom: 10,
-  },
-  track: {
-    height: 6,
-    backgroundColor: '#333',
-    borderRadius: 3,
-    justifyContent: 'center',
-  },
-  fill: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    backgroundColor: '#007AFF',
-    borderRadius: 3,
-  },
-  thumb: {
-    position: 'absolute',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 4,
-  },
+  container: { marginBottom: 10 },
+  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 },
+  label: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  valueRow: { flexDirection: 'row', alignItems: 'center' },
+  value: { color: '#007AFF', fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'], minWidth: 44, textAlign: 'center' },
+  stepButton: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#333', justifyContent: 'center', alignItems: 'center', marginHorizontal: 4 },
+  stepButtonText: { color: '#fff', fontSize: 15, fontWeight: '700', lineHeight: 17 },
+  description: { color: '#999', fontSize: 10, marginBottom: 4 },
+  // 窄轨道（不铺满全宽，居中约 60% 宽）+ 小滑块，不占太多取景画面
+  track: { height: 24, width: '60%', alignSelf: 'center', backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 12, justifyContent: 'center' },
+  fill: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: '#007AFF', borderRadius: 12 },
+  thumb: { position: 'absolute', width: 16, height: 16, borderRadius: 8, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3, elevation: 4 },
 });

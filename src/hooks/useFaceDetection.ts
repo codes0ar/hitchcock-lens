@@ -20,7 +20,6 @@ const NO_FACE_TOLERANCE = 5;
 const SMOOTH_WINDOW = 3;
 
 export function useFaceDetection() {
-  const [faces, setFaces] = useState<FaceData[]>([]);
   const [lockStatus, setLockStatus] = useState<FaceLockStatus>('no-face');
   const [primaryFaceWidth, setPrimaryFaceWidth] = useState(0);
   const [primaryFaceHeight, setPrimaryFaceHeight] = useState(0);
@@ -32,13 +31,17 @@ export function useFaceDetection() {
 
   const noFaceCount = useRef(0);
   const lastUiTs = useRef(0);
+  /** debug overlay 降频(200ms) */
+  const lastDebugTs = useRef(0);
+  /** console.log 降频(500ms, 日志跨桥开销大) */
+  const lastLogTs = useRef(0);
   const lockedFaceRef = useRef<FaceData | null>(null);
   /** ref 跟踪当前是否有脸(confirmLock 用,避免依赖 faces state 导致 callback 重建) */
   const hasFacesRef = useRef(false);
-  /** 人脸边界滑动平均窗口(仅用于绿框/居中显示, 控制器用原始 faceW 无延迟) */
+  /** 人脸边界滑动平均窗口(仅用于绿框显示平滑; 控制器用原始框宽, 零延迟) */
   const boundsHistoryRef = useRef<Array<{ x: number; y: number; width: number; height: number }>>([]);
-  /** 眼距滑动平均窗口(控制器输入降噪, 3帧≈100ms 匹配执行器节流) */
-  const eyeDistHistoryRef = useRef<number[]>([]);
+  /** 控制器输入 2 帧轻平滑(只加 ~33ms 延迟, 让步进更细、抑制单帧抖动) */
+  const metricHistoryRef = useRef<number[]>([]);
 
   /** 帧处理器回调（由 CameraScreen 的 frameProcessor 在每帧调用，经 runOnJS 派发） */
   const onFacesDetected = useCallback((detectedFaces: Face[]) => {
@@ -47,28 +50,17 @@ export function useFaceDetection() {
     lastUiTs.current = now;
 
     const valid: FaceData[] = (detectedFaces || [])
-      .filter((f) => f.bounds && f.bounds.width >= 50 && f.bounds.height >= 50)
-      .map((f, i) => {
-        // 双眼间距: 比 bounding box 更稳定的 face-size metric (几何特征, 不受光照/角度抖动)
-        let eyeDistance = 0;
-        if (f.landmarks?.LEFT_EYE && f.landmarks?.RIGHT_EYE) {
-          const dx = f.landmarks.LEFT_EYE.x - f.landmarks.RIGHT_EYE.x;
-          const dy = f.landmarks.LEFT_EYE.y - f.landmarks.RIGHT_EYE.y;
-          eyeDistance = Math.sqrt(dx * dx + dy * dy);
-        }
-        return {
-          bounds: { x: f.bounds.x, y: f.bounds.y, width: f.bounds.width, height: f.bounds.height },
-          faceID: f.trackingId ?? i,
-          eyeDistance,
-        };
-      });
-
-    setFaces(valid);
+      .filter((f) => f.bounds && f.bounds.width >= 20 && f.bounds.height >= 20)
+      .map((f, i) => ({
+        bounds: { x: f.bounds.x, y: f.bounds.y, width: f.bounds.width, height: f.bounds.height },
+        faceID: f.trackingId ?? i,
+        eyeDistance: 0, // landmarkMode=none，不再计算眼距（减负）
+      }));
 
     if (valid.length === 0) {
       hasFacesRef.current = false;
       boundsHistoryRef.current = [];
-      eyeDistHistoryRef.current = [];
+      metricHistoryRef.current = [];
       noFaceCount.current += 1;
       if (noFaceCount.current >= NO_FACE_TOLERANCE) {
         setLockStatus('no-face');
@@ -100,29 +92,30 @@ export function useFaceDetection() {
     );
     const avg = { x: sum.x / n, y: sum.y / n, width: sum.width / n, height: sum.height / n };
 
-    // 控制器用眼距(更稳定), 无 landmark 时回退到 bounds width
-    const rawMetric = primary.eyeDistance > 0 ? primary.eyeDistance : primary.bounds.width;
+    // 控制器用 2 帧轻平滑的绿框宽度（延迟 ~33ms，让步进更细、抑制单帧抖动）；
+    // 黄框(参考)宽度是录制起点捕获值，PID 目标=黄框宽，形成"绿框宽→黄框宽"的直接回路。
+    const mHist = metricHistoryRef.current;
+    mHist.push(primary.bounds.width);
+    if (mHist.length > 2) mHist.shift();
+    const metric = mHist.reduce((a, b) => a + b, 0) / mHist.length;
 
-    // 眼距 3帧 MA 降噪 (控制器输入, 100ms 窗口匹配执行器节流, 延迟可忽略)
-    const eHist = eyeDistHistoryRef.current;
-    eHist.push(rawMetric);
-    if (eHist.length > 3) eHist.shift();
-    const metric = eHist.reduce((a, b) => a + b, 0) / eHist.length;
-
-    // DEBUG: 眼距 vs bounds + landmark 状态
-    setFaceDebug({
-      eyeDist: primary.eyeDistance,
-      avgMetric: metric,
-      boundsW: primary.bounds.width,
-      hasLandmark: primary.eyeDistance > 0,
-    });
-    if (primary.eyeDistance > 0) {
-      console.log('[Face] eyeDist=' + primary.eyeDistance.toFixed(1) + ' avg=' + metric.toFixed(1) + ' boundsW=' + primary.bounds.width.toFixed(1));
-    } else {
-      console.log('[Face] NO_LANDMARK boundsW=' + primary.bounds.width.toFixed(1) + ' (fallback)');
+    // DEBUG overlay 降频到 200ms
+    if (now - lastDebugTs.current > 200) {
+      lastDebugTs.current = now;
+      setFaceDebug({
+        eyeDist: 0,
+        avgMetric: metric,
+        boundsW: primary.bounds.width,
+        hasLandmark: false,
+      });
+    }
+    // console.log 降频到 500ms (跨桥开销大)
+    if (now - lastLogTs.current > 500) {
+      lastLogTs.current = now;
+      console.log('[Face] boundsW=' + primary.bounds.width.toFixed(1));
     }
 
-    // 控制器用降噪后 metric; 显示用平滑 bounds
+    // 控制器用原始 metric; 显示用平滑 bounds
     setPrimaryFaceWidth(metric);
     setPrimaryFaceHeight(primary.bounds.height);
     setPrimaryFaceBounds(avg);
@@ -141,7 +134,6 @@ export function useFaceDetection() {
   }, []);
 
   const reset = useCallback(() => {
-    setFaces([]);
     setLockStatus('no-face');
     setPrimaryFaceWidth(0);
     setPrimaryFaceHeight(0);
@@ -156,7 +148,7 @@ export function useFaceDetection() {
   }, []);
 
   return {
-    faces,
+    faces: [] as FaceData[], // faces 数组无消费者，不再每帧 setState 以减负
     lockStatus,
     primaryFaceWidth,
     primaryFaceHeight,

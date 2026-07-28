@@ -11,7 +11,7 @@ import {
   convertZoomToNormalized,
   type PIDDebug,
 } from '../utils/ZoomController';
-import type { AppSettings, FaceLockStatus } from '../types';
+import type { FaceLockStatus } from '../types';
 
 /** DEV: 合成 faceW 测试控制环(无需真人移动)。true=注入合成数据验证镜头是否会动; 验证后改 false。 */
 const DEV_TEST_SYNTH = false;
@@ -26,12 +26,16 @@ interface UseZoomControlProps {
   faceLockStatus: FaceLockStatus;
   /** 主要人脸像素宽度 */
   primaryFaceWidth: number;
-  /** 应用设置（灵敏度、平滑度） */
-  settings: AppSettings;
   /** 设备最大zoom倍数 */
   maxZoomRatio: number;
   /** 设备最小zoom倍数 */
   minZoomRatio: number;
+  /** PID 比例增益 */
+  kp: number;
+  /** PID 积分增益 */
+  ki: number;
+  /** PID 微分增益 */
+  kd: number;
 }
 
 /**
@@ -43,9 +47,11 @@ export function useZoomControl({
   setNormalizedZoom,
   faceLockStatus,
   primaryFaceWidth,
-  settings,
   maxZoomRatio,
   minZoomRatio,
+  kp,
+  ki,
+  kd,
 }: UseZoomControlProps) {
   // === Refs ===
   /** ZoomController 实例（使用ref保证跨渲染周期持久） */
@@ -56,14 +62,8 @@ export function useZoomControl({
   const targetSetRef = useRef(false);
   /** 当前zoom倍数的引用（用于ZoomController.update） */
   const currentZoomRef = useRef(currentZoomRatio);
-  /** 上一帧 faceW(deadzone 防抖: 变化<3% 不更新 zoom, 消除 high-zoom 微抖) */
-  const lastFaceWRef = useRef(0);
-  /** 执行器匹配节流时间戳(镜头~100ms 才稳定, 控制器每 100ms 发一次命令, 否则几何级数发散→振荡) */
-  const lastControlTsRef = useRef(0);
-  /** PID 目标 zoom(Stage1 每 100ms 计算, Stage2 每 33ms 平滑逼近) */
-  const targetZoomRef = useRef(1.0);
-  /** 平滑后的实际 zoom(Stage2 EMA 输出, 30fps 连续更新消除跳动) */
-  const smoothedZoomRef = useRef(1.0);
+  /** debug overlay 降频用时间戳 */
+  const lastDebugUiTs = useRef(0);
 
   // === 状态 ===
   /** 当前显示给用户的zoom倍数 */
@@ -78,32 +78,26 @@ export function useZoomControl({
     currentZoomRef.current = currentZoomRatio;
   }, [currentZoomRatio]);
 
-  // 初始化ZoomController
+  // 初始化ZoomController — Kp/Ki/Kd 构造函数内固定, 录制时不变, 确保环路收敛
   useEffect(() => {
     if (!controllerRef.current) {
       controllerRef.current = new ZoomController({
         minZoom: minZoomRatio,
         maxZoom: maxZoomRatio,
-        smoothingFactor: settings.smoothness,
+        smoothingFactor: 0.15,
       });
     }
-
     return () => {
-      // 清理
       controllerRef.current = null;
     };
   }, [minZoomRatio, maxZoomRatio]);
 
-  // 当设置变化时更新控制器参数
+  // Kp/Ki/Kd slider 变化时即时更新, 录制中可调
   useEffect(() => {
     if (controllerRef.current) {
-      controllerRef.current.updateOptions({
-        smoothingFactor: settings.smoothness,
-        minZoom: minZoomRatio,
-        maxZoom: maxZoomRatio,
-      });
+      controllerRef.current.setGains(kp, ki, kd);
     }
-  }, [settings, minZoomRatio, maxZoomRatio]);
+  }, [kp, ki, kd]);
 
   /**
    * 处理人脸锁定状态变化
@@ -129,19 +123,18 @@ export function useZoomControl({
     // 人脸丢失：保持目标参考不变，zoom 维持上一次值
     if (currentStatus === 'no-face') {
       setShowLockIndicator(false);
-      lastFaceWRef.current = 0;
     }
 
     lastLockStatusRef.current = currentStatus;
   }, [faceLockStatus, primaryFaceWidth]);
 
   /**
-   * 核心控制循环 — 监听人脸尺寸变化，更新zoom
-   * 当 primaryFaceWidth 变化时（即检测到新人脸帧），计算新的zoom
+   * 核心控制循环 — 每帧用真实镜头 zoom 反馈计算目标 zoom
+   *
+   * 噪声与平滑已内聚到 ZoomController 中，这里直接应用输出。
    */
   useEffect(() => {
-    if (DEV_TEST_SYNTH) return; // DEV: 跳过真实控制环, 由合成 effect 接管
-    // 只有在锁定状态且有有效人脸宽度时才更新zoom
+    if (DEV_TEST_SYNTH) return;
     if (
       faceLockStatus === 'locked' ||
       (faceLockStatus === 'detected' && targetSetRef.current)
@@ -149,28 +142,20 @@ export function useZoomControl({
       if (primaryFaceWidth <= 0) return;
       if (!controllerRef.current) return;
 
-      // Stage 2: 平滑插值(每 33ms, EMA 0.3 → 时间常数~100ms, 消除 100ms 步进跳动感)
-      const target = targetZoomRef.current;
-      const current = smoothedZoomRef.current;
-      const smoothed = current + (target - current) * 0.3;
-      smoothedZoomRef.current = smoothed;
-      const normalizedZoom = convertZoomToNormalized(smoothed, minZoomRatio, maxZoomRatio);
-      setNormalizedZoom(normalizedZoom);
-      setDisplayZoom(smoothed);
-
-      // Stage 1: PID 目标计算(每 100ms, 匹配镜头执行器响应时间)
-      const now = Date.now();
-      if (now - lastControlTsRef.current >= 100) {
-        lastControlTsRef.current = now;
-        try {
-          const pidOutput = controllerRef.current.update(primaryFaceWidth, smoothed);
-          targetZoomRef.current = pidOutput;
-          if (controllerRef.current?.lastDebug) {
-            setDebugInfo({ ...controllerRef.current.lastDebug });
-          }
-        } catch (error) {
-          console.error('[useZoomControl] PID更新失败:', error);
+      try {
+        const realZoom = currentZoomRef.current;
+        const pidOutput = controllerRef.current.update(primaryFaceWidth, realZoom);
+        const normalizedZoom = convertZoomToNormalized(pidOutput, minZoomRatio, maxZoomRatio);
+        setNormalizedZoom(normalizedZoom);
+        setDisplayZoom(pidOutput);
+        // debug overlay 降频到 150ms，减少重渲染
+        const nowTs = Date.now();
+        if (nowTs - lastDebugUiTs.current > 150 && controllerRef.current?.lastDebug) {
+          lastDebugUiTs.current = nowTs;
+          setDebugInfo({ ...controllerRef.current.lastDebug });
         }
+      } catch (error) {
+        console.error('[useZoomControl] PID更新失败:', error);
       }
     }
   }, [
@@ -218,13 +203,10 @@ export function useZoomControl({
    */
   const resetZoom = useCallback(() => {
     targetSetRef.current = false;
-    lastControlTsRef.current = 0;
-    targetZoomRef.current = 1.0;
-    smoothedZoomRef.current = 1.0;
     if (controllerRef.current) {
       controllerRef.current.reset();
     }
-    setNormalizedZoom(0); // 回到最小zoom
+    setNormalizedZoom(0);
     setDisplayZoom(1.0);
     setShowLockIndicator(false);
   }, [setNormalizedZoom]);
@@ -234,6 +216,7 @@ export function useZoomControl({
    */
   const setTargetSize = useCallback((size: number) => {
     if (controllerRef.current) {
+      controllerRef.current.reset();
       controllerRef.current.setTargetFaceSize(size);
       targetSetRef.current = true;
     }
