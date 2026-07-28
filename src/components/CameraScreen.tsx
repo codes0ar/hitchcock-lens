@@ -450,8 +450,8 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
       </View>
 
       {/* === 中央: 人脸锁定指示器 === */}
-      <View style={styles.centerOverlay} pointerEvents="none">
-        <FaceLockIndicator lockStatus={faceLockStatus} faceWidth={displayZoom > 1 ? 1 : 0} />
+      <View style={styles.centerOverlay} pointerEvents="box-none">
+        <FaceLockIndicator lockStatus={faceLockStatus} faceWidth={displayZoom > 1 ? 1 : 0} onToggleLock={onToggleLock} />
       </View>
 
       {/* === 底部控制区 === */}

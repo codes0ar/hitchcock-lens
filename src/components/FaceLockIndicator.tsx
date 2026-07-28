@@ -14,6 +14,7 @@ import {
   Text,
   Animated,
   Easing,
+  TouchableOpacity,
 } from 'react-native';
 
 import type { FaceLockStatus } from '../types';
@@ -24,14 +25,17 @@ interface FaceLockIndicatorProps {
   lockStatus: FaceLockStatus;
   /** 人脸宽度（用于显示大小参考） */
   faceWidth: number;
+  /** 点击锁定/解锁（中央按钮即锁定键） */
+  onToggleLock?: () => void;
 }
 
 /**
- * 人脸锁定指示器
- * 显示在画面中央，告知用户人脸检测和锁定状态
+ * 人脸锁定指示器 + 中央锁定按钮
+ * 显示在画面中央，检测到人脸时即"点击锁定"按钮，锁定后点击可解锁
  */
 export const FaceLockIndicator: React.FC<FaceLockIndicatorProps> = ({
   lockStatus,
+  onToggleLock,
 }) => {
   // 呼吸动画值
   const breatheAnim = React.useRef(new Animated.Value(1)).current;
@@ -92,9 +96,9 @@ export const FaceLockIndicator: React.FC<FaceLockIndicatorProps> = ({
                 { transform: [{ scale: breatheAnim }] },
               ]}
             >
-              <Text style={styles.icon}>🔍</Text>
+              <Text style={styles.icon}>🔓</Text>
             </Animated.View>
-            <Text style={styles.detectedText}>检测到人脸，点击 🔒 锁定</Text>
+            <Text style={styles.detectedText}>点击锁定</Text>
           </View>
         );
 
@@ -110,7 +114,7 @@ export const FaceLockIndicator: React.FC<FaceLockIndicatorProps> = ({
             >
               <Text style={styles.icon}>🔒</Text>
             </Animated.View>
-            <Text style={styles.lockedText}>人脸已锁定</Text>
+            <Text style={styles.lockedText}>已锁定 · 点击解锁</Text>
           </View>
         );
 
@@ -125,9 +129,9 @@ export const FaceLockIndicator: React.FC<FaceLockIndicatorProps> = ({
   }
 
   return (
-    <View style={styles.wrapper}>
+    <TouchableOpacity style={styles.wrapper} onPress={onToggleLock} activeOpacity={0.7} disabled={!onToggleLock}>
       {getIndicatorContent()}
-    </View>
+    </TouchableOpacity>
   );
 };
 
