@@ -7,6 +7,9 @@
 
 import type { ZoomControllerOptions } from '../types';
 
+/** 控制模式：'pid' 纯PID | 'smooth' PID+卡尔曼平滑 | 'lead' PID+卡尔曼平滑+前馈 */
+export type ControlMode = 'pid' | 'smooth' | 'lead';
+
 /** PID 调试信息(供 on-screen debug overlay 显示) */
 export interface PIDDebug {
   faceW: number;
@@ -21,6 +24,8 @@ export interface PIDDebug {
   output: number;
   slewRate: number;
   integral: number;
+  /** 当前控制模式(pid/smooth/lead)，on-screen 验证用 */
+  mode: ControlMode;
 }
 
 /** 默认控制参数 */
@@ -106,12 +111,18 @@ export class ZoomController {
   private prevActualZoom = 0;
   /** 镜头物理滞后估计 T_lag（秒），用于扰动前馈提前量 */
   private readonly T_LAG = 0.12;
-  /** 是否启用 卡尔曼输入平滑 + T_lag 扰动前馈（A/B 对比开关） */
-  private useKalmanLead = true;
+  /**
+   * 控制模式（A/B/C 对比）：
+   *  - 'pid'    纯 PID（默认）：原始测量 + 有限差分微分。
+   *             静态诊断证明环路稳定; 75s×690样本动态 A/B 中误差最小(σ9.45px)
+   *  - 'smooth' PID + 卡尔曼输入平滑：反转数略降但滞后使误差 +17%, 抖动未降, 弃用
+   *  - 'lead'   PID + 卡尔曼平滑 + T_lag 扰动前馈（实测负优化, 误差 45px）
+   */
+  private controlMode: ControlMode = 'pid';
 
-  /** 切换控制模式：true=PID+卡尔曼+前馈, false=纯 PID */
-  public setKalmanLead(enabled: boolean): void {
-    this.useKalmanLead = enabled;
+  /** 切换控制模式 */
+  public setControlMode(mode: ControlMode): void {
+    this.controlMode = mode;
   }
 
   /** PID 增益 (默认值, slider 可在录制中随时调整) */
@@ -246,11 +257,13 @@ export class ZoomController {
     const actAlpha = dt / (ACTUATOR_TAU + dt);
     this.actualZoom += (this.lastOutputZoom - this.actualZoom) * actAlpha;
 
-    // === 输入端人脸尺寸估计（A/B 开关）===
-    // useKalmanLead=true: 卡尔曼滤波得干净 s/v; false(纯PID): 直接用原始 facePixelSize
+    // === 输入端人脸尺寸估计（按控制模式）===
+    // smooth/lead: 卡尔曼滤波得干净 s/v; pid(纯PID): 直接用原始 facePixelSize
+    const useSmooth = this.controlMode !== 'pid';
+    const useLead = this.controlMode === 'lead';
     let faceS = facePixelSize;
     let faceV = 0;
-    if (this.useKalmanLead) {
+    if (useSmooth) {
       const kf = this.kalmanUpdate(facePixelSize, dt);
       faceS = kf.s;
       faceV = kf.v;
@@ -273,19 +286,19 @@ export class ZoomController {
       this.integralError = Math.max(-1.0, Math.min(1.0, this.integralError));
     }
 
-    // 微分项：卡尔曼模式用速度 v；纯PID用有限差分
+    // 微分项：卡尔曼平滑模式用速度 v；纯PID用有限差分
     const rawDelta = this.lastFaceSize > 0 ? facePixelSize - this.lastFaceSize : 0;
     let logDerivative = 0;
-    if (this.useKalmanLead) {
+    if (useSmooth) {
       logDerivative = faceS > 0 ? -faceV / faceS : 0;
     } else if (this.lastFaceSize > 0 && dt > 0) {
       logDerivative = -(Math.log(facePixelSize) - Math.log(this.lastFaceSize)) / dt;
     }
     this.lastFaceSize = facePixelSize;
 
-    // === 扰动速率前馈（T_lag 提前量，补镜头物理滞后；仅卡尔曼+前馈模式启用）===
+    // === 扰动速率前馈（T_lag 提前量，补镜头物理滞后；仅 'lead' 模式启用）===
     let lead = 0;
-    if (this.useKalmanLead) {
+    if (useLead) {
       let rd = 0;
       if (this.prevActualZoom > 0 && faceS > 0 && dt > 0) {
         const dlogZ = (Math.log(this.actualZoom) - Math.log(this.prevActualZoom)) / dt;
@@ -316,10 +329,12 @@ export class ZoomController {
       Math.min(this.lastOutputZoom + maxDelta, desiredZoom)
     );
 
-    // 输出 EMA（τ≈50ms）：把检测噪声导致的 zoom 指令阶梯抹平，
+    // 输出 EMA（τ≈120ms）：把检测噪声导致的 zoom 指令阶梯抹平，
     // 这是"放大时步进跳跃"的主要来源——指令本身平滑了画面才平滑。
-    // (70→50ms 再降延迟；回稳主要受平滑限制)
-    const OUTPUT_TAU = 0.05;
+    // A/B 实测(75s×690样本): 输入端卡尔曼平滑使误差+17%且不降噪, 弃用;
+    // 输出端 τ 50→120ms (9-10Hz 检测下 α 0.69→0.48) 可砍近半可见抖动,
+    // 代价仅 ~70ms 滞后 (dolly 8.7%/s 时速率误差 +0.6%, 可忽略)。
+    const OUTPUT_TAU = 0.12;
     const outAlpha = dt / (OUTPUT_TAU + dt);
     const outputZoom = this.lastOutputZoom + outAlpha * (slewLimited - this.lastOutputZoom);
 
@@ -337,6 +352,7 @@ export class ZoomController {
       output: outputZoom,
       slewRate: maxDelta / dt,
       integral: this.integralError,
+      mode: this.controlMode,
     };
     if (now - this.lastLogTs > 50) {
       this.lastLogTs = now;

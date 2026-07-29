@@ -9,6 +9,7 @@ import { useRef, useCallback, useEffect, useState } from 'react';
 import {
   ZoomController,
   convertZoomToNormalized,
+  type ControlMode,
   type PIDDebug,
 } from '../utils/ZoomController';
 import type { FaceLockStatus } from '../types';
@@ -222,9 +223,9 @@ export function useZoomControl({
     }
   }, []);
 
-  /** 切换控制模式：true=PID+卡尔曼+前馈, false=纯 PID (A/B 对比) */
-  const setKalmanLead = useCallback((enabled: boolean) => {
-    controllerRef.current?.setKalmanLead(enabled);
+  /** 切换控制模式：'pid' 纯PID | 'smooth' PID+卡尔曼平滑(默认) | 'lead' 平滑+前馈 (A/B/C 对比) */
+  const setControlMode = useCallback((mode: ControlMode) => {
+    controllerRef.current?.setControlMode(mode);
   }, []);
 
   return {
@@ -233,7 +234,7 @@ export function useZoomControl({
     debugInfo,
     resetZoom,
     setTargetSize,
-    setKalmanLead,
+    setControlMode,
     isLocked: controllerRef.current?.isLocked() ?? false,
   };
 }

@@ -18,6 +18,7 @@ import {
   TouchableOpacity,
   Dimensions,
 } from 'react-native';
+import type { ControlMode } from '../utils/ZoomController';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -103,9 +104,9 @@ interface SettingsPanelProps {
   onUpdatePidKp: (v: number) => void;
   onUpdatePidKi: (v: number) => void;
   onUpdatePidKd: (v: number) => void;
-  /** 控制模式：true=PID+卡尔曼+前馈, false=纯PID */
-  kalmanLeadEnabled: boolean;
-  onToggleKalmanLead: () => void;
+  /** 控制模式（三档）：'pid' 纯PID | 'smooth' PID+卡尔曼平滑 | 'lead' 平滑+前馈 */
+  controlMode: ControlMode;
+  onCycleControlMode: () => void;
 }
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
@@ -115,8 +116,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onUpdatePidKp,
   onUpdatePidKi,
   onUpdatePidKd,
-  kalmanLeadEnabled,
-  onToggleKalmanLead,
+  controlMode,
+  onCycleControlMode,
 }) => {
   const [visible, setVisible] = useState(false);
 
@@ -186,9 +187,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 description="抑制震荡, 噪声敏感"
               />
 
-              <TouchableOpacity style={styles.modeButton} onPress={onToggleKalmanLead} activeOpacity={0.8}>
+              <TouchableOpacity style={styles.modeButton} onPress={onCycleControlMode} activeOpacity={0.8}>
                 <Text style={styles.modeButtonText}>
-                  控制模式: {kalmanLeadEnabled ? 'PID + 卡尔曼 + 前馈' : '纯 PID'}
+                  控制模式: {controlMode === 'pid' ? '纯 PID' : controlMode === 'smooth' ? 'PID + 卡尔曼平滑' : 'PID + 卡尔曼 + 前馈'}
                 </Text>
               </TouchableOpacity>
 

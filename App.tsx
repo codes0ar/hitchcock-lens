@@ -14,6 +14,7 @@ import type { AppSettings } from './src/types';
 import { useCamera } from './src/hooks/useCamera';
 import { useFaceDetection } from './src/hooks/useFaceDetection';
 import { useZoomControl } from './src/hooks/useZoomControl';
+import type { ControlMode } from './src/utils/ZoomController';
 import { CameraScreen } from './src/components/CameraScreen';
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -63,7 +64,7 @@ export default function App(): JSX.Element {
     faceDebug,
   } = useFaceDetection();
 
-  const { displayZoom, isLocked, debugInfo, resetZoom, setTargetSize, setKalmanLead } = useZoomControl({
+  const { displayZoom, isLocked, debugInfo, resetZoom, setTargetSize, setControlMode } = useZoomControl({
     currentZoomRatio: getCurrentZoomRatio(),
     setNormalizedZoom,
     faceLockStatus: lockStatus,
@@ -75,11 +76,15 @@ export default function App(): JSX.Element {
     kd: pidKd,
   });
 
-  /** 控制模式开关：true=PID+卡尔曼+前馈(实测负优化), false=纯PID(默认,实测最优) */
-  const [kalmanLeadEnabled, setKalmanLeadEnabled] = useState(false);
+  /**
+   * 控制模式（三档循环）：
+   *  'pid' 纯PID(默认, 动态A/B误差最小) | 'smooth' +卡尔曼平滑(滞后使误差+17%, 弃用)
+   *  | 'lead' 平滑+前馈(实测负优化)
+   */
+  const [controlMode, setControlModeState] = useState<ControlMode>('pid');
   useEffect(() => {
-    setKalmanLead(kalmanLeadEnabled);
-  }, [kalmanLeadEnabled, setKalmanLead]);
+    setControlMode(controlMode);
+  }, [controlMode, setControlMode]);
 
   const handleUpdateSettings = useCallback(
     (partial: Partial<AppSettings>) => {
@@ -203,8 +208,10 @@ export default function App(): JSX.Element {
       onUpdatePidKp={setPidKp}
       onUpdatePidKi={setPidKi}
       onUpdatePidKd={setPidKd}
-      kalmanLeadEnabled={kalmanLeadEnabled}
-      onToggleKalmanLead={() => setKalmanLeadEnabled((v) => !v)}
+      controlMode={controlMode}
+      onCycleControlMode={() =>
+        setControlModeState((m) => (m === 'pid' ? 'smooth' : m === 'smooth' ? 'lead' : 'pid'))
+      }
       onRequestPermission={handleRequestPermission}
     />
   );

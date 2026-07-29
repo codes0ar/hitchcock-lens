@@ -30,7 +30,7 @@ import { useFaceDetector, type Face, type FrameFaceDetectionOptions } from 'reac
 import { Accelerometer } from 'expo-sensors';
 
 import type { FaceLockStatus, RecordingStatus, AppSettings, CameraFacing } from '../types';
-import type { PIDDebug } from '../utils/ZoomController';
+import type { PIDDebug, ControlMode } from '../utils/ZoomController';
 import { RecordButton } from './RecordButton';
 import { FaceLockIndicator } from './FaceLockIndicator';
 import { ZoomDisplay } from './ZoomDisplay';
@@ -110,9 +110,9 @@ interface CameraScreenProps {
   onUpdatePidKp: (v: number) => void;
   onUpdatePidKi: (v: number) => void;
   onUpdatePidKd: (v: number) => void;
-  /** 控制模式开关状态与切换（PID+卡尔曼+前馈 vs 纯PID） */
-  kalmanLeadEnabled: boolean;
-  onToggleKalmanLead: () => void;
+  /** 控制模式（三档）与循环切换（纯PID / +卡尔曼平滑 / +前馈） */
+  controlMode: ControlMode;
+  onCycleControlMode: () => void;
   onRequestPermission: () => void;
 }
 
@@ -147,8 +147,8 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
   onUpdatePidKp,
   onUpdatePidKi,
   onUpdatePidKd,
-  kalmanLeadEnabled,
-  onToggleKalmanLead,
+  controlMode,
+  onCycleControlMode,
   onRequestPermission,
   onManualZoomRatio,
 }) => {
@@ -414,8 +414,8 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
           {debugInfo ? `err:${debugInfo.error.toFixed(4)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
           {debugInfo ? `Kp*e:${debugInfo.P.toFixed(4)} Ki*∫:${debugInfo.I.toFixed(4)} Kd*de:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
           {debugInfo ? `dMeas:${debugInfo.dMeasurement.toFixed(1)} ∫e:${debugInfo.integral.toFixed(3)}` : ''}{'\n'}
-          {debugInfo ? `out:${debugInfo.output.toFixed(3)}x` : ''}{'\n'}
-          v4.7
+          {debugInfo ? `out:${debugInfo.output.toFixed(3)}x mode:${debugInfo.mode}` : ''}{'\n'}
+          v4.8
         </Text>
       </View>
 
@@ -465,7 +465,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
         <RecordButton recordingStatus={recordingStatus} onPress={onToggleRecording} />
         <SettingsPanel pidKp={pidKp} pidKi={pidKi} pidKd={pidKd}
           onUpdatePidKp={onUpdatePidKp} onUpdatePidKi={onUpdatePidKi} onUpdatePidKd={onUpdatePidKd}
-          kalmanLeadEnabled={kalmanLeadEnabled} onToggleKalmanLead={onToggleKalmanLead} />
+          controlMode={controlMode} onCycleControlMode={onCycleControlMode} />
       </View>
     </SafeAreaView>
   );
