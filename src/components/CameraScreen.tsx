@@ -22,6 +22,7 @@ import {
 } from 'react-native';
 import {
   Camera,
+  useCameraFormat,
   useFrameProcessor,
   type CameraDevice,
 } from 'react-native-vision-camera';
@@ -154,6 +155,11 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
 }) => {
   // 实验：autoMode=false 拿原始帧坐标，日志打印原始框，验证检测库给的坐标系
   const { width: winW, height: winH } = useWindowDimensions();
+  /** 检测帧提到 720p：同样物理人脸像素 ×2，更小/更远的人脸也能识别（默认 640x480 小脸检测不到） */
+  const format = useCameraFormat(device, [
+    { videoResolution: { width: 1280, height: 720 } },
+    { fps: 30 },
+  ]);
   const detectorOptions = useMemo(
     () =>
       ({
@@ -351,6 +357,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
           ref={cameraRef as React.RefObject<Camera>}
           style={styles.camera}
           device={device}
+          format={format}
           isActive={appActive}
           audio={true}
           videoStabilizationMode="off"
@@ -415,7 +422,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
           {debugInfo ? `Kp*e:${debugInfo.P.toFixed(4)} Ki*∫:${debugInfo.I.toFixed(4)} Kd*de:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
           {debugInfo ? `dMeas:${debugInfo.dMeasurement.toFixed(1)} ∫e:${debugInfo.integral.toFixed(3)}` : ''}{'\n'}
           {debugInfo ? `out:${debugInfo.output.toFixed(3)}x mode:${debugInfo.mode}` : ''}{'\n'}
-          v4.8
+          v5.0
         </Text>
       </View>
 

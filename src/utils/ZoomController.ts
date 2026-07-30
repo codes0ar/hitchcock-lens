@@ -261,10 +261,19 @@ export class ZoomController {
     // smooth/lead: 卡尔曼滤波得干净 s/v; pid(纯PID): 直接用原始 facePixelSize
     const useSmooth = this.controlMode !== 'pid';
     const useLead = this.controlMode === 'lead';
-    let faceS = facePixelSize;
+    // 输入变化率钳制：人脸丢失后重新捕获/主脸切换时 faceW 不连续跳变，
+    // 单样本最大 ±22% (ln 0.2)，超出部分截断——2-3 个样本内收敛但不猛冲
+    let clampedInput = facePixelSize;
+    if (this.lastFaceSize > 0) {
+      const ratio = facePixelSize / this.lastFaceSize;
+      const maxRatio = 1.22;
+      if (ratio > maxRatio) clampedInput = this.lastFaceSize * maxRatio;
+      else if (ratio < 1 / maxRatio) clampedInput = this.lastFaceSize / maxRatio;
+    }
+    let faceS = clampedInput;
     let faceV = 0;
     if (useSmooth) {
-      const kf = this.kalmanUpdate(facePixelSize, dt);
+      const kf = this.kalmanUpdate(clampedInput, dt);
       faceS = kf.s;
       faceV = kf.v;
     }
@@ -286,15 +295,15 @@ export class ZoomController {
       this.integralError = Math.max(-1.0, Math.min(1.0, this.integralError));
     }
 
-    // 微分项：卡尔曼平滑模式用速度 v；纯PID用有限差分
+    // 微分项：卡尔曼平滑模式用速度 v；纯PID用有限差分(用钳制后输入, 防重捕获尖峰)
     const rawDelta = this.lastFaceSize > 0 ? facePixelSize - this.lastFaceSize : 0;
     let logDerivative = 0;
     if (useSmooth) {
       logDerivative = faceS > 0 ? -faceV / faceS : 0;
     } else if (this.lastFaceSize > 0 && dt > 0) {
-      logDerivative = -(Math.log(facePixelSize) - Math.log(this.lastFaceSize)) / dt;
+      logDerivative = -(Math.log(clampedInput) - Math.log(this.lastFaceSize)) / dt;
     }
-    this.lastFaceSize = facePixelSize;
+    this.lastFaceSize = clampedInput;
 
     // === 扰动速率前馈（T_lag 提前量，补镜头物理滞后；仅 'lead' 模式启用）===
     let lead = 0;
@@ -321,8 +330,9 @@ export class ZoomController {
     // 几何前馈：用估计的真实 zoom 计算目标
     const desiredZoom = Math.max(minZoom, Math.min(maxZoom, this.actualZoom * Math.exp(adjustment)));
 
-    // 执行器速率限制：最大 3x zoom/秒（实测回稳受平滑限制而非速率，放宽以加快纠偏）
-    const MAX_SLEW_PER_SEC = 3.0;
+    // 执行器速率限制：实测 dolly 斜坡只需 ~0.15x/s，3.0/s 宽容 20 倍、
+    // 把检测噪声放大成可见跳动；降到 1.0/s 仍支持 1 秒内 1x→2x 的快速纠偏
+    const MAX_SLEW_PER_SEC = 1.0;
     const maxDelta = MAX_SLEW_PER_SEC * dt;
     const slewLimited = Math.max(
       this.lastOutputZoom - maxDelta,
