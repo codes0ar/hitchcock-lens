@@ -91,7 +91,7 @@ const PidSlider: React.FC<PidSliderProps> = ({
         onTouchMove={handleTouch}
       >
         <View pointerEvents="none" style={[sliderStyles.fill, { width: `${progress * 100}%` }]} />
-        <View pointerEvents="none" style={[sliderStyles.thumb, { left: `${progress * 100}%`, marginLeft: -8 }]} />
+        <View pointerEvents="none" style={[sliderStyles.thumb, { left: `${progress * 100}%`, marginLeft: -5.5 }]} />
       </View>
     </View>
   );
@@ -219,31 +219,31 @@ const styles = StyleSheet.create({
   panel: { position: 'absolute', bottom: 0, alignSelf: 'center', width: 300, backgroundColor: 'rgba(20,20,24,0.6)', borderRadius: 14, paddingHorizontal: 14, paddingTop: 4, paddingBottom: 12, zIndex: 31 },
   handle: { width: 32, height: 3, borderRadius: 2, backgroundColor: '#555', alignSelf: 'center', marginTop: 6, marginBottom: 6 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  title: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  title: { color: '#fff', fontSize: 12, fontWeight: '700' },
   closeHit: { padding: 6, marginRight: -6 },
-  closeButton: { color: '#aaa', fontSize: 16, fontWeight: '600' },
+  closeButton: { color: '#aaa', fontSize: 14, fontWeight: '600' },
   content: {},
-  infoSection: { marginTop: 4, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#333' },
-  infoTitle: { color: '#aaa', fontSize: 11, fontWeight: '600', marginBottom: 2 },
-  infoText: { color: '#777', fontSize: 11, lineHeight: 15 },
-  infoHint: { color: '#555', fontSize: 10, marginTop: 3 },
-  doneButton: { marginTop: 8, backgroundColor: '#007AFF', borderRadius: 8, paddingVertical: 8, alignItems: 'center' },
-  doneButtonText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  modeButton: { marginTop: 2, marginBottom: 10, backgroundColor: 'rgba(0,122,255,0.25)', borderRadius: 8, paddingVertical: 8, alignItems: 'center', borderWidth: 1, borderColor: '#007AFF' },
-  modeButtonText: { color: '#4da3ff', fontSize: 13, fontWeight: '700' },
+  infoSection: { marginTop: 4, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#333' },
+  infoTitle: { color: '#aaa', fontSize: 10, fontWeight: '600', marginBottom: 2 },
+  infoText: { color: '#777', fontSize: 10, lineHeight: 14 },
+  infoHint: { color: '#555', fontSize: 9, marginTop: 3 },
+  doneButton: { marginTop: 6, backgroundColor: '#007AFF', borderRadius: 7, paddingVertical: 5, alignItems: 'center' },
+  doneButtonText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  modeButton: { marginTop: 2, marginBottom: 8, backgroundColor: 'rgba(0,122,255,0.25)', borderRadius: 7, paddingVertical: 5, alignItems: 'center', borderWidth: 1, borderColor: '#007AFF' },
+  modeButtonText: { color: '#4da3ff', fontSize: 11, fontWeight: '700' },
 });
 
 const sliderStyles = StyleSheet.create({
-  container: { marginBottom: 10 },
+  container: { marginBottom: 7 },
   labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 },
-  label: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  label: { color: '#fff', fontSize: 11, fontWeight: '600' },
   valueRow: { flexDirection: 'row', alignItems: 'center' },
-  value: { color: '#007AFF', fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'], minWidth: 44, textAlign: 'center' },
-  stepButton: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#333', justifyContent: 'center', alignItems: 'center', marginHorizontal: 4 },
-  stepButtonText: { color: '#fff', fontSize: 15, fontWeight: '700', lineHeight: 17 },
-  description: { color: '#999', fontSize: 10, marginBottom: 4 },
+  value: { color: '#007AFF', fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'], minWidth: 36, textAlign: 'center' },
+  stepButton: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#333', justifyContent: 'center', alignItems: 'center', marginHorizontal: 3 },
+  stepButtonText: { color: '#fff', fontSize: 11, fontWeight: '700', lineHeight: 13 },
+  description: { color: '#999', fontSize: 9, marginBottom: 3 },
   // 窄轨道（不铺满全宽，居中约 60% 宽）+ 小滑块，不占太多取景画面
-  track: { height: 24, width: '60%', alignSelf: 'center', backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 12, justifyContent: 'center' },
-  fill: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: '#007AFF', borderRadius: 12 },
-  thumb: { position: 'absolute', width: 16, height: 16, borderRadius: 8, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3, elevation: 4 },
+  track: { height: 16, width: '60%', alignSelf: 'center', backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 9, justifyContent: 'center' },
+  fill: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: '#007AFF', borderRadius: 9 },
+  thumb: { position: 'absolute', width: 11, height: 11, borderRadius: 6, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3, elevation: 4 },
 });

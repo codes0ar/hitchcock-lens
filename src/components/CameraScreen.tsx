@@ -290,9 +290,27 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
   const smoothRatioRef = useRef(0);
   // 捏合调试：实时显示触点数和系数，用于追溯为什么捏合不生效
   const [pinchDebug, setPinchDebug] = useState({ touches: 0, factor: 0 });
+  /** debug 悬浮窗：默认隐藏，三指双击切换显示 */
+  const [debugVisible, setDebugVisible] = useState(false);
+  const threeTapRef = useRef({ count: 0, ts: 0 });
   // 用根容器原生 onTouch* 事件（与 zoom slider 同一套机制，直接读 touches 数组）。
-  const handlePinchTouch = (evt: { nativeEvent: { touches: Array<{ pageX: number; pageY: number }> } }) => {
+  const handlePinchTouch = (evt: { nativeEvent: { touches: Array<{ pageX: number; pageY: number }> } }, isStart: boolean) => {
     const t = evt.nativeEvent.touches;
+    // 三指双击 → 切换 debug 悬浮窗（只在 touchStart 计数，move 会重复触发）
+    if (t.length >= 3) {
+      if (isStart) {
+        const now = Date.now();
+        const s = threeTapRef.current;
+        s.count = now - s.ts < 600 ? s.count + 1 : 1;
+        s.ts = now;
+        if (s.count >= 2) {
+          s.count = 0;
+          setDebugVisible((v) => !v);
+        }
+      }
+      pinchRef.current.initialDist = 0;
+      return; // 三指不参与捏合
+    }
     if (t.length >= 2) {
       const dist = Math.hypot(t[0].pageX - t[1].pageX, t[0].pageY - t[1].pageY);
       if (isLockedRef.current || recStatusRef.current === 'recording') {
@@ -344,8 +362,8 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
   return (
     <SafeAreaView
       style={styles.container}
-      onTouchStart={handlePinchTouch}
-      onTouchMove={handlePinchTouch}
+      onTouchStart={(e: { nativeEvent: { touches: Array<{ pageX: number; pageY: number }> } }) => handlePinchTouch(e, true)}
+      onTouchMove={(e: { nativeEvent: { touches: Array<{ pageX: number; pageY: number }> } }) => handlePinchTouch(e, false)}
       onTouchEnd={resetPinch}
       onTouchCancel={resetPinch}
     >
@@ -408,23 +426,20 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
         />
       )}
 
-      {/* === DEBUG 信息面板(on-screen overlay) === */}
-      <View style={styles.debugOverlay} pointerEvents="none">
-        <Text style={styles.debugText}>
-          <Text style={styles.debugTitle}>● Kp:{pidKp.toFixed(2)} Ki:{pidKi.toFixed(3)} Kd:{pidKd.toFixed(3)}</Text>{'\n'}
-          lock:{isLocked ? 'Y' : 'N'} zoom:{displayZoom.toFixed(2)}x{'\n'}
-          pinch:{pinchDebug.touches} f:{pinchDebug.factor.toFixed(2)}{'\n'}
-          win:{winW.toFixed(0)}x{winH.toFixed(0)}{'\n'}
-          ori:{oriDebug}{'\n'}
-          {faceDebug ? `eye:${faceDebug.eyeDist.toFixed(0)} avg:${faceDebug.avgMetric.toFixed(0)} bw:${faceDebug.boundsW.toFixed(0)} lm:${faceDebug.hasLandmark ? 'Y' : 'N'}` : 'no-face'}{'\n'}
-          {debugInfo ? `tgt:${debugInfo.target.toFixed(0)} faceW:${debugInfo.faceW.toFixed(1)}` : ''}{'\n'}
-          {debugInfo ? `err:${debugInfo.error.toFixed(4)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
-          {debugInfo ? `Kp*e:${debugInfo.P.toFixed(4)} Ki*∫:${debugInfo.I.toFixed(4)} Kd*de:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
-          {debugInfo ? `dMeas:${debugInfo.dMeasurement.toFixed(1)} ∫e:${debugInfo.integral.toFixed(3)}` : ''}{'\n'}
-          {debugInfo ? `out:${debugInfo.output.toFixed(3)}x mode:${debugInfo.mode}` : ''}{'\n'}
-          v5.0
-        </Text>
-      </View>
+      {/* === DEBUG 信息面板(on-screen overlay)：默认隐藏，三指双击切换 === */}
+      {debugVisible && (
+        <View style={styles.debugOverlay} pointerEvents="none">
+          <Text style={styles.debugText}>
+            <Text style={styles.debugTitle}>● Kp:{pidKp.toFixed(2)} Ki:{pidKi.toFixed(3)} Kd:{pidKd.toFixed(3)}</Text>{'\n'}
+            lock:{isLocked ? 'Y' : 'N'} zoom:{displayZoom.toFixed(2)}x{'\n'}
+            {debugInfo ? `tgt:${debugInfo.target.toFixed(0)} faceW:${debugInfo.faceW.toFixed(1)}` : 'no-face'}{'\n'}
+            {debugInfo ? `err:${debugInfo.error.toFixed(4)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
+            {debugInfo ? `Kp*e:${debugInfo.P.toFixed(4)} Ki*∫:${debugInfo.I.toFixed(4)} Kd*de:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
+            {debugInfo ? `out:${debugInfo.output.toFixed(3)}x mode:${debugInfo.mode}` : ''}{'\n'}
+            v5.1
+          </Text>
+        </View>
+      )}
 
       {/* === 顶部工具栏 === */}
       <View style={styles.topBar} pointerEvents="box-none">
@@ -434,15 +449,6 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
               <Text style={[styles.iconText, isTorchOn && styles.iconTextActive]}>🔦</Text>
             </View>
             <Text style={styles.iconLabel}>{isTorchOn ? '开启' : '关闭'}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.iconButton} onPress={onToggleLock} activeOpacity={0.7}>
-            <View style={[styles.iconContainer, isLocked && styles.iconContainerActive]}>
-              <Text style={styles.iconText}>{isLocked ? '🔒' : '🔓'}</Text>
-            </View>
-            <Text style={[styles.iconLabel, isLocked && styles.iconLabelActive]}>
-              {isLocked ? '已锁定' : '点击锁定'}
-            </Text>
           </TouchableOpacity>
 
           {recordingStatus === 'recording' && (
