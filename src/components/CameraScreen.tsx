@@ -40,49 +40,36 @@ import { SettingsPanel } from './SettingsPanel';
 type BoxBounds = { x: number; y: number; width: number; height: number };
 
 /**
- * 复制 face-detector 原生 autoMode 的"后摄"缩放+旋转公式，
- * 但 orientation 改用我们自己用加速度计测到的物理方向（原生监听器在本机不触发）。
- * raw 为 autoMode=false 返回的图像坐标框（imageW×imageH）。
+ * 把检测框（autoMode=false 返回的"显示端正"图像坐标）映射到屏幕坐标。
+ *
+ * 实测结论（v5.3 试错换来）：检测库经 CameraX rotationDegrees 补偿后，
+ * 返回的框已在"显示端正"坐标系中——与预览内容方向一致，与手机物理朝向无关。
+ * 因此正确映射是恒等缩放（无旋转），唯一要注意的是坐标系尺寸跟随显示方向：
+ *   竖屏窗口: 帧显示为 imageH×imageW（竖长）
+ *   横屏窗口: 帧显示为 imageW×imageH（横长）
+ * 预览为非均匀拉伸填充，故 scaleX/scaleY 独立计算。
+ * （加速度计测得的物理 rot 仅用于 debug 显示，不参与框映射——v5.2 曾误用它
+ *  导致横屏时框被压扁/对调，v5.3 误用 90° 旋转导致框偏离人脸。）
  */
 function processBox(
   raw: BoxBounds,
-  orientation: number, // 0 / 90 / 180 / 270
+  orientation: number, // 保留参数兼容调用方，不再使用
   winW: number,
   winH: number,
   imageW: number,
   imageH: number
 ): BoxBounds {
-  // 与原生一致：sourceWidth=image.height, sourceHeight=image.width（带维度交换）
-  const sourceWidth = imageH;
-  const sourceHeight = imageW;
+  const landscape = winW > winH;
+  const sourceWidth = landscape ? imageW : imageH;
+  const sourceHeight = landscape ? imageH : imageW;
   const scaleX = winW / sourceWidth;
   const scaleY = winH / sourceHeight;
-  const w = raw.width * scaleX;
-  const h = raw.height * scaleY;
-  const x = raw.x;
-  const y = raw.y;
-  let bx = x * scaleX;
-  let by = y * scaleY;
-  if (orientation === 270) {
-    // 横屏：检测框坐标系是"竖屏端正"帧(imageH×imageW)，显示内容=该帧旋转90°后拉伸到窗口。
-    // 旋转后内容尺寸为 imageW×imageH，须用 imageW/imageH 做缩放分母（否则纵向被压扁），
-    // 且框的宽/高必须随旋转对调（原生公式漏了对调 → 横屏框躺倒）
-    const sX = winW / imageW;
-    const sY = winH / imageH;
-    bx = y * sX;
-    by = (imageH - x - raw.width) * sY;
-    return { x: bx, y: by, width: raw.height * sX, height: raw.width * sY };
-  } else if (orientation === 90) {
-    const sX = winW / imageW;
-    const sY = winH / imageH;
-    bx = (imageW - y - raw.height) * sX;
-    by = x * sY;
-    return { x: bx, y: by, width: raw.height * sX, height: raw.width * sY };
-  } else if (orientation === 180) {
-    bx = (sourceWidth - x) * scaleX - w;
-    by = (sourceHeight - y) * scaleY - h;
-  }
-  return { x: bx, y: by, width: w, height: h };
+  return {
+    x: raw.x * scaleX,
+    y: raw.y * scaleY,
+    width: raw.width * scaleX,
+    height: raw.height * scaleY,
+  };
 }
 
 interface CameraScreenProps {
@@ -192,13 +179,15 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
   useEffect(() => {
     Accelerometer.setUpdateInterval(200);
     const sub = Accelerometer.addListener(({ x, y, z }) => {
-      // 低通滤波
-      const gx = x, gy = y;
+      // 不同机型单位不一致（有的 m/s² 有的 G）：按模长归一化，阈值 ±0.7 通吃
+      const mag = Math.hypot(x, y, z);
+      const gx = mag > 0.01 ? x / mag : 0;
+      const gy = mag > 0.01 ? y / mag : 0;
       let rot = deviceRotationRef.current;
       if (Math.abs(gy) >= Math.abs(gx)) {
-        rot = gy < -2 ? 0 : gy > 2 ? 180 : rot;
+        rot = gy < -0.7 ? 0 : gy > 0.7 ? 180 : rot;
       } else {
-        rot = gx > 2 ? 270 : gx < -2 ? 90 : rot;
+        rot = gx > 0.7 ? 270 : gx < -0.7 ? 90 : rot;
       }
       if (rot !== deviceRotationRef.current) {
         deviceRotationRef.current = rot;
@@ -445,7 +434,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
             {debugInfo ? `err:${debugInfo.error.toFixed(4)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
             {debugInfo ? `Kp*e:${debugInfo.P.toFixed(4)} Ki*∫:${debugInfo.I.toFixed(4)} Kd*de:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
             {debugInfo ? `out:${debugInfo.output.toFixed(3)}x mode:${debugInfo.mode}` : ''}{'\n'}
-            v5.2
+            v5.4
           </Text>
         </View>
       )}
