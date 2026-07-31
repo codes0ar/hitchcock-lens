@@ -42,14 +42,11 @@ type BoxBounds = { x: number; y: number; width: number; height: number };
 /**
  * 把检测框（autoMode=false 返回的"显示端正"图像坐标）映射到屏幕坐标。
  *
- * 实测结论（v5.3 试错换来）：检测库经 CameraX rotationDegrees 补偿后，
- * 返回的框已在"显示端正"坐标系中——与预览内容方向一致，与手机物理朝向无关。
- * 因此正确映射是恒等缩放（无旋转），唯一要注意的是坐标系尺寸跟随显示方向：
- *   竖屏窗口: 帧显示为 imageH×imageW（竖长）
- *   横屏窗口: 帧显示为 imageW×imageH（横长）
- * 预览为非均匀拉伸填充，故 scaleX/scaleY 独立计算。
- * （加速度计测得的物理 rot 仅用于 debug 显示，不参与框映射——v5.2 曾误用它
- *  导致横屏时框被压扁/对调，v5.3 误用 90° 旋转导致框偏离人脸。）
+ * 实测结论（v5.4 截图像素级测量）：
+ * - 检测库经 CameraX rotationDegrees 补偿后，框在"显示端正"坐标系（无旋转）
+ * - 预览是 cover（等比缩放+居中裁剪），不是拉伸：统一 scale = max(winW/cw, winH/ch)，
+ *   超出窗口的轴被居中裁掉。用非均匀 scaleX/scaleY 会在被裁轴上错位/变窄。
+ *   竖屏窗口(320x663)实测：s=winH/imageW=0.518, 仅横向裁剪 26.6px，y 无裁剪。
  */
 function processBox(
   raw: BoxBounds,
@@ -59,16 +56,18 @@ function processBox(
   imageW: number,
   imageH: number
 ): BoxBounds {
-  const landscape = winW > winH;
-  const sourceWidth = landscape ? imageW : imageH;
-  const sourceHeight = landscape ? imageH : imageW;
-  const scaleX = winW / sourceWidth;
-  const scaleY = winH / sourceHeight;
+  const portrait = winH >= winW;
+  // 显示端正坐标系下，内容尺寸：竖屏窗口为竖长帧，横屏窗口为横长帧
+  const cw = portrait ? imageH : imageW;
+  const ch = portrait ? imageW : imageH;
+  const s = Math.max(winW / cw, winH / ch);
+  const cropX = (cw * s - winW) / 2;
+  const cropY = (ch * s - winH) / 2;
   return {
-    x: raw.x * scaleX,
-    y: raw.y * scaleY,
-    width: raw.width * scaleX,
-    height: raw.height * scaleY,
+    x: raw.x * s - cropX,
+    y: raw.y * s - cropY,
+    width: raw.width * s,
+    height: raw.height * s,
   };
 }
 
@@ -434,7 +433,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
             {debugInfo ? `err:${debugInfo.error.toFixed(4)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
             {debugInfo ? `Kp*e:${debugInfo.P.toFixed(4)} Ki*∫:${debugInfo.I.toFixed(4)} Kd*de:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
             {debugInfo ? `out:${debugInfo.output.toFixed(3)}x mode:${debugInfo.mode}` : ''}{'\n'}
-            v5.4
+            v5.5
           </Text>
         </View>
       )}
