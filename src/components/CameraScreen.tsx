@@ -64,11 +64,20 @@ function processBox(
   let bx = x * scaleX;
   let by = y * scaleY;
   if (orientation === 270) {
-    bx = y * scaleX;
-    by = (sourceHeight - x) * scaleY - h;
+    // 横屏：检测框坐标系是"竖屏端正"帧(imageH×imageW)，显示内容=该帧旋转90°后拉伸到窗口。
+    // 旋转后内容尺寸为 imageW×imageH，须用 imageW/imageH 做缩放分母（否则纵向被压扁），
+    // 且框的宽/高必须随旋转对调（原生公式漏了对调 → 横屏框躺倒）
+    const sX = winW / imageW;
+    const sY = winH / imageH;
+    bx = y * sX;
+    by = (imageH - x - raw.width) * sY;
+    return { x: bx, y: by, width: raw.height * sX, height: raw.width * sY };
   } else if (orientation === 90) {
-    bx = (sourceWidth - y) * scaleX - w;
-    by = x * scaleY;
+    const sX = winW / imageW;
+    const sY = winH / imageH;
+    bx = (imageW - y - raw.height) * sX;
+    by = x * sY;
+    return { x: bx, y: by, width: raw.height * sX, height: raw.width * sY };
   } else if (orientation === 180) {
     bx = (sourceWidth - x) * scaleX - w;
     by = (sourceHeight - y) * scaleY - h;
@@ -436,7 +445,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
             {debugInfo ? `err:${debugInfo.error.toFixed(4)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
             {debugInfo ? `Kp*e:${debugInfo.P.toFixed(4)} Ki*∫:${debugInfo.I.toFixed(4)} Kd*de:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
             {debugInfo ? `out:${debugInfo.output.toFixed(3)}x mode:${debugInfo.mode}` : ''}{'\n'}
-            v5.1
+            v5.2
           </Text>
         </View>
       )}
