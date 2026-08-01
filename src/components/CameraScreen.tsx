@@ -200,13 +200,14 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
   useEffect(() => {
     Accelerometer.setUpdateInterval(200);
     const sub = Accelerometer.addListener(({ x, y, z }) => {
-      // 不同机型单位不一致（有的 m/s² 有的 G）：按模长归一化，阈值 ±0.7 通吃
+      // 不同机型单位不一致（有的 m/s² 有的 G）：按模长归一化，阈值 ±0.7 通吃。
+      // 加速度计测的是"反向重力"：竖直握持时 gy≈+1（向上），故 gy>0.7 才是竖屏。
       const mag = Math.hypot(x, y, z);
       const gx = mag > 0.01 ? x / mag : 0;
       const gy = mag > 0.01 ? y / mag : 0;
       let rot = deviceRotationRef.current;
       if (Math.abs(gy) >= Math.abs(gx)) {
-        rot = gy < -0.7 ? 0 : gy > 0.7 ? 180 : rot;
+        rot = gy > 0.7 ? 0 : gy < -0.7 ? 180 : rot;
       } else {
         rot = gx > 0.7 ? 270 : gx < -0.7 ? 90 : rot;
       }
@@ -378,6 +379,11 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
     );
   }
 
+  // 手机物理横屏/倒置但窗口保持竖屏布局时，把文字与图标按重力方向转正方便阅读
+  // rot=90(左边缘朝下) → 元素顺时针转90°; rot=270 → 逆时针90°; rot=180 → 倒置
+  const uiRotate = deviceRotation === 90 ? '90deg' : deviceRotation === 270 ? '-90deg' : deviceRotation === 180 ? '180deg' : '0deg';
+  const uiRotStyle = { transform: [{ rotate: uiRotate }] } as const;
+
   return (
     <SafeAreaView
       style={styles.container}
@@ -447,7 +453,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
 
       {/* === DEBUG 信息面板(on-screen overlay)：默认隐藏，三指双击切换 === */}
       {debugVisible && (
-        <View style={styles.debugOverlay} pointerEvents="none">
+        <View style={[styles.debugOverlay, uiRotStyle]} pointerEvents="none">
           <Text style={styles.debugText}>
             <Text style={styles.debugTitle}>● Kp:{pidKp.toFixed(2)} Ki:{pidKi.toFixed(3)} Kd:{pidKd.toFixed(3)}</Text>{'\n'}
             lock:{isLocked ? 'Y' : 'N'} zoom:{displayZoom.toFixed(2)}x{'\n'}
@@ -455,7 +461,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
             {debugInfo ? `err:${debugInfo.error.toFixed(4)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
             {debugInfo ? `Kp*e:${debugInfo.P.toFixed(4)} Ki*∫:${debugInfo.I.toFixed(4)} Kd*de:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
             {debugInfo ? `out:${debugInfo.output.toFixed(3)}x mode:${debugInfo.mode}` : ''}{'\n'}
-            v5.6
+            v5.8
           </Text>
         </View>
       )}
@@ -463,7 +469,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
       {/* === 顶部工具栏 === */}
       <View style={styles.topBar} pointerEvents="box-none">
         <View style={styles.topBarContent}>
-          <TouchableOpacity style={styles.iconButton} onPress={onToggleFlash} activeOpacity={0.7}>
+          <TouchableOpacity style={[styles.iconButton, uiRotStyle]} onPress={onToggleFlash} activeOpacity={0.7}>
             <View style={styles.iconContainer}>
               <Text style={[styles.iconText, isTorchOn && styles.iconTextActive]}>🔦</Text>
             </View>
@@ -471,13 +477,13 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
           </TouchableOpacity>
 
           {recordingStatus === 'recording' && (
-            <View style={styles.recordingIndicator}>
+            <View style={[styles.recordingIndicator, uiRotStyle]}>
               <View style={styles.recordingDot} />
               <Text style={styles.recordingText}>录制中</Text>
             </View>
           )}
 
-          <TouchableOpacity style={styles.iconButton} onPress={onToggleFacing} activeOpacity={0.7}>
+          <TouchableOpacity style={[styles.iconButton, uiRotStyle]} onPress={onToggleFacing} activeOpacity={0.7}>
             <View style={styles.iconContainer}>
               <Text style={styles.iconText}>🔄</Text>
             </View>
@@ -488,12 +494,16 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
 
       {/* === 中央: 人脸锁定指示器 === */}
       <View style={styles.centerOverlay} pointerEvents="box-none">
-        <FaceLockIndicator lockStatus={faceLockStatus} faceWidth={displayZoom > 1 ? 1 : 0} onToggleLock={onToggleLock} />
+        <View style={uiRotStyle} pointerEvents="box-none">
+          <FaceLockIndicator lockStatus={faceLockStatus} faceWidth={displayZoom > 1 ? 1 : 0} onToggleLock={onToggleLock} />
+        </View>
       </View>
 
       {/* === 底部控制区 === */}
       <View style={styles.bottomControls} pointerEvents="box-none">
-        <ZoomDisplay zoomRatio={displayZoom} />
+        <View style={uiRotStyle} pointerEvents="box-none">
+          <ZoomDisplay zoomRatio={displayZoom} />
+        </View>
         <RecordButton recordingStatus={recordingStatus} onPress={onToggleRecording} />
         <SettingsPanel pidKp={pidKp} pidKi={pidKi} pidKd={pidKd}
           onUpdatePidKp={onUpdatePidKp} onUpdatePidKi={onUpdatePidKi} onUpdatePidKd={onUpdatePidKd}
