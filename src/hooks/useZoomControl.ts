@@ -228,6 +228,11 @@ export function useZoomControl({
     controllerRef.current?.setControlMode(mode);
   }, []);
 
+  /** 调优热参数（JSON 轮询热加载用） */
+  const setTuneParams = useCallback((p: Parameters<ZoomController['setTuneParams']>[0]) => {
+    controllerRef.current?.setTuneParams(p);
+  }, []);
+
   return {
     displayZoom,
     showLockIndicator,
@@ -235,6 +240,7 @@ export function useZoomControl({
     resetZoom,
     setTargetSize,
     setControlMode,
+    setTuneParams,
     isLocked: controllerRef.current?.isLocked() ?? false,
   };
 }

@@ -9,6 +9,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Alert } from 'react-native';
+import * as FileSystem from 'expo-file-system';
 
 import type { AppSettings } from './src/types';
 import { useCamera } from './src/hooks/useCamera';
@@ -64,7 +65,7 @@ export default function App(): JSX.Element {
     faceDebug,
   } = useFaceDetection();
 
-  const { displayZoom, isLocked, debugInfo, resetZoom, setTargetSize, setControlMode } = useZoomControl({
+  const { displayZoom, isLocked, debugInfo, resetZoom, setTargetSize, setControlMode, setTuneParams } = useZoomControl({
     currentZoomRatio: getCurrentZoomRatio(),
     setNormalizedZoom,
     faceLockStatus: lockStatus,
@@ -85,6 +86,49 @@ export default function App(): JSX.Element {
   useEffect(() => {
     setControlMode(controlMode);
   }, [controlMode, setControlMode]);
+
+  /**
+   * 调优热加载：每 2s 轮询 /sdcard/Download/hitchcock_tune.json，
+   * 内容变化时把 mode/gains/控制器参数热应用（resetState 由控制器处理，保留锁定）。
+   * 文件不存在或解析失败则静默跳过——日常使用零开销。
+   */
+  const tuneContentRef = useRef('');
+  const tuneErrLoggedRef = useRef(false);
+  useEffect(() => {
+    const TUNE_PATH = '/sdcard/Android/data/com.example.hitchcockcamera/files/hitchcock_tune.json';
+    const timer = setInterval(async () => {
+      try {
+        let content: string;
+        try {
+          content = await FileSystem.readAsStringAsync('file://' + TUNE_PATH);
+        } catch (e1) {
+          content = await FileSystem.readAsStringAsync(TUNE_PATH);
+        }
+        if (content === tuneContentRef.current) return;
+        tuneContentRef.current = content;
+        const p = JSON.parse(content);
+        if (p.mode === 'pid' || p.mode === 'smooth' || p.mode === 'lead') {
+          setControlModeState(p.mode);
+        }
+        if (typeof p.kp === 'number') setPidKp(p.kp);
+        if (typeof p.ki === 'number') setPidKi(p.ki);
+        if (typeof p.kd === 'number') setPidKd(p.kd);
+        setTuneParams({
+          tuneId: p.tuneId, kfQS: p.kfQS, kfQV: p.kfQV, kfR: p.kfR,
+          tLag: p.tLag, rdClamp: p.rdClamp, leadClamp: p.leadClamp,
+          deadband: p.deadband, outputTau: p.outputTau, resetState: p.resetState,
+        });
+        console.log('[Tune] id=' + p.tuneId + ' applied: ' + content.replace(/\s+/g, ' ').slice(0, 160));
+      } catch (e) {
+        // 文件不存在/解析失败：跳过；但首个错误打印一次便于诊断
+        if (!tuneErrLoggedRef.current) {
+          tuneErrLoggedRef.current = true;
+          console.log('[Tune] read/parse error: ' + String(e).slice(0, 200));
+        }
+      }
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [setTuneParams]);
 
   const handleUpdateSettings = useCallback(
     (partial: Partial<AppSettings>) => {

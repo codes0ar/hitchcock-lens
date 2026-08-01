@@ -103,14 +103,51 @@ export class ZoomController {
   private kP00 = 100;
   private kP01 = 0;
   private kP11 = 100;
-  /** 卡尔曼过程噪声(尺寸) / 过程噪声(速度) / 测量噪声（保守取值） */
-  private readonly KF_QS = 8;
-  private readonly KF_QV = 40;
-  private readonly KF_R = 6;
+  /** 卡尔曼过程噪声(尺寸) / 过程噪声(速度) / 测量噪声
+   *  v5.10 调优战役(6窗回文对照)整定：R=3/QV=20 时 smooth 与纯PID统计打平；
+   *  R≥12 或 QV≥100 显著滞后恶化；lead 全参数空间负优化 */
+  private KF_QS = 8;
+  private KF_QV = 20;
+  private KF_R = 3;
   /** 上一次 actualZoom（用于求 dlog(z_lens)/dt，进而算扰动速率 rd） */
   private prevActualZoom = 0;
   /** 镜头物理滞后估计 T_lag（秒），用于扰动前馈提前量 */
-  private readonly T_LAG = 0.12;
+  private T_LAG = 0.12;
+  /** 扰动速率限幅 (1/s) / 前馈提前量限幅（调优可热改） */
+  private RD_CLAMP = 2.0;
+  private LEAD_CLAMP = 0.3;
+  /** 死区 / 输出 EMA 时间常数（调优可热改） */
+  private DEADBAND = 0.01;
+  private OUTPUT_TAU = 0.12;
+  /** 调优参数组 ID（[Track] 日志分段用；0=未在调优） */
+  private tuneId = 0;
+
+  /** 调优热参数：不改结构只改数值；resetState 重置积分/卡尔曼但保留锁定目标与 zoom 状态 */
+  public setTuneParams(p: {
+    tuneId?: number; kfQS?: number; kfQV?: number; kfR?: number;
+    tLag?: number; rdClamp?: number; leadClamp?: number;
+    deadband?: number; outputTau?: number; resetState?: boolean;
+  }): void {
+    if (p.tuneId !== undefined) this.tuneId = p.tuneId;
+    if (p.kfQS !== undefined) this.KF_QS = p.kfQS;
+    if (p.kfQV !== undefined) this.KF_QV = p.kfQV;
+    if (p.kfR !== undefined) this.KF_R = p.kfR;
+    if (p.tLag !== undefined) this.T_LAG = p.tLag;
+    if (p.rdClamp !== undefined) this.RD_CLAMP = p.rdClamp;
+    if (p.leadClamp !== undefined) this.LEAD_CLAMP = p.leadClamp;
+    if (p.deadband !== undefined) this.DEADBAND = p.deadband;
+    if (p.outputTau !== undefined) this.OUTPUT_TAU = p.outputTau;
+    if (p.resetState) {
+      this.integralError = 0;
+      this.kS = 0;
+      this.kV = 0;
+      this.kP00 = 100;
+      this.kP01 = 0;
+      this.kP11 = 100;
+      this.prevActualZoom = 0;
+      this.lastFaceSize = 0;
+    }
+  }
   /**
    * 控制模式（A/B/C 对比）：
    *  - 'pid'    纯 PID（默认）：原始测量 + 有限差分微分。
@@ -281,10 +318,8 @@ export class ZoomController {
     // 对数误差：+ 脸太小需要 zoom in，- 脸太大需要 zoom out
     const logError = Math.log(target / faceS);
 
-    // 死区：|误差|<1% 时不调整，防止围绕目标的微震荡；同时积分衰减防残余拉动
-    // 1% 让步进更细（原来 2% 会"憋一下才纠正"，放大时有明显跳跃感）
-    const DEADBAND = 0.01;
-    const inDeadband = Math.abs(logError) < DEADBAND;
+    // 死区：|误差|<DEADBAND 时不调整，防止围绕目标的微震荡；同时积分衰减防残余拉动
+    const inDeadband = Math.abs(logError) < this.DEADBAND;
     const effectiveError = inDeadband ? 0 : logError;
 
     // 积分项 (anti-windup ±1.0)
@@ -314,10 +349,9 @@ export class ZoomController {
         const dlogS = faceV / faceS;
         rd = dlogZ - dlogS;
       }
-      const RD_CLAMP = 2.0; // 扰动速率限幅 (1/s)，防检测噪声放大提前量
-      rd = Math.max(-RD_CLAMP, Math.min(RD_CLAMP, rd));
+      rd = Math.max(-this.RD_CLAMP, Math.min(this.RD_CLAMP, rd));
       lead = rd * this.T_LAG;
-      lead = Math.max(-0.3, Math.min(0.3, lead)); // 提前量限幅，保守防过冲
+      lead = Math.max(-this.LEAD_CLAMP, Math.min(this.LEAD_CLAMP, lead)); // 提前量限幅，保守防过冲
     }
     this.prevActualZoom = this.actualZoom;
 
@@ -339,13 +373,9 @@ export class ZoomController {
       Math.min(this.lastOutputZoom + maxDelta, desiredZoom)
     );
 
-    // 输出 EMA（τ≈120ms）：把检测噪声导致的 zoom 指令阶梯抹平，
+    // 输出 EMA（τ≈120ms 默认）：把检测噪声导致的 zoom 指令阶梯抹平，
     // 这是"放大时步进跳跃"的主要来源——指令本身平滑了画面才平滑。
-    // A/B 实测(75s×690样本): 输入端卡尔曼平滑使误差+17%且不降噪, 弃用;
-    // 输出端 τ 50→120ms (9-10Hz 检测下 α 0.69→0.48) 可砍近半可见抖动,
-    // 代价仅 ~70ms 滞后 (dolly 8.7%/s 时速率误差 +0.6%, 可忽略)。
-    const OUTPUT_TAU = 0.12;
-    const outAlpha = dt / (OUTPUT_TAU + dt);
+    const outAlpha = dt / (this.OUTPUT_TAU + dt);
     const outputZoom = this.lastOutputZoom + outAlpha * (slewLimited - this.lastOutputZoom);
 
     this.lastOutputZoom = outputZoom;
@@ -368,7 +398,8 @@ export class ZoomController {
       this.lastLogTs = now;
       // 高速率跟踪日志（仿真测量用）：faceW(控制器输入) / tgt(目标) / out(输出zoom)
       console.log(
-        '[Track] faceW=' + facePixelSize.toFixed(1) +
+        '[Track] tid=' + this.tuneId +
+        ' faceW=' + facePixelSize.toFixed(1) +
         ' tgt=' + target.toFixed(1) + ' out=' + outputZoom.toFixed(3) +
         ' actual=' + this.actualZoom.toFixed(3) + ' desired=' + desiredZoom.toFixed(3)
       );
