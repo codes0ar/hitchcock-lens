@@ -380,8 +380,8 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
   }
 
   // 手机物理横屏/倒置但窗口保持竖屏布局时，把文字与图标按重力方向转正方便阅读
-  // rot=90(左边缘朝下) → 元素顺时针转90°; rot=270 → 逆时针90°; rot=180 → 倒置
-  const uiRotate = deviceRotation === 90 ? '90deg' : deviceRotation === 270 ? '-90deg' : deviceRotation === 180 ? '180deg' : '0deg';
+  // 实测（v5.8 用户反馈方向反了）：gx<0 时世界向上=屏幕左侧，应逆时针转 90°
+  const uiRotate = deviceRotation === 90 ? '-90deg' : deviceRotation === 270 ? '90deg' : deviceRotation === 180 ? '180deg' : '0deg';
   const uiRotStyle = { transform: [{ rotate: uiRotate }] } as const;
 
   return (
@@ -461,7 +461,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
             {debugInfo ? `err:${debugInfo.error.toFixed(4)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
             {debugInfo ? `Kp*e:${debugInfo.P.toFixed(4)} Ki*∫:${debugInfo.I.toFixed(4)} Kd*de:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
             {debugInfo ? `out:${debugInfo.output.toFixed(3)}x mode:${debugInfo.mode}` : ''}{'\n'}
-            v5.8
+            v5.9
           </Text>
         </View>
       )}
