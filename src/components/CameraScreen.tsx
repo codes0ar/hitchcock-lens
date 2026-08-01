@@ -461,7 +461,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
             {debugInfo ? `err:${debugInfo.error.toFixed(4)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
             {debugInfo ? `Kp*e:${debugInfo.P.toFixed(4)} Ki*∫:${debugInfo.I.toFixed(4)} Kd*de:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
             {debugInfo ? `out:${debugInfo.output.toFixed(3)}x mode:${debugInfo.mode}` : ''}{'\n'}
-            v6.1
+            v6.2
           </Text>
         </View>
       )}

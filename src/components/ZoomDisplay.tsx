@@ -23,8 +23,8 @@ interface ZoomDisplayProps {
  * 简洁地显示当前光学/数码变焦倍数
  */
 export const ZoomDisplay: React.FC<ZoomDisplayProps> = ({ zoomRatio }) => {
-  // 两位小数 + x后缀（镜头本身支持连续变焦，显示精度对齐到 0.01）
-  const formattedZoom = `${zoomRatio.toFixed(2)}x`;
+  // 四位小数 + x后缀（镜头与控制链路全程浮点，显示精度对齐到 0.0001）
+  const formattedZoom = `${zoomRatio.toFixed(4)}x`;
 
   return (
     <View style={styles.container}>
