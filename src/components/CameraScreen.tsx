@@ -170,6 +170,28 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
     [facing]
   );
   const detector = useFaceDetector(detectorOptions);
+  /** 兜底检测器：accurate 模式 + 更低 minFaceSize，小/远脸召回更高（借鉴 vediohartrate 视频路的配置）。
+   *  帧率代价大（720p 下 ~2-5fps），只在 fast 连续检测不到（no-face）时启用，检出后切回 fast。 */
+  const accDetectorOptions = useMemo(
+    () =>
+      ({
+        performanceMode: 'accurate',
+        landmarkMode: 'none',
+        contourMode: 'none',
+        classificationMode: 'none',
+        trackingEnabled: true,
+        autoMode: false,
+        minFaceSize: 0.03,
+        cameraFacing: facing,
+      } as FrameFaceDetectionOptions),
+    [facing]
+  );
+  const accDetector = useFaceDetector(accDetectorOptions);
+  // fast 每帧跑; lockStatus=no-face（连续 ~0.7s 未检出）时切 accurate 兜底重捕
+  const activeDetector = faceLockStatus === 'no-face' ? accDetector : detector;
+  useEffect(() => {
+    console.log('[Detector] 切换=' + (faceLockStatus === 'no-face' ? 'accurate(兜底)' : 'fast'));
+  }, [faceLockStatus]);
 
   // === 加速度计测设备物理方向（替代原生方向监听器，本机它不触发）===
   const [deviceRotation, setDeviceRotation] = useState(0); // 0/90/180/270
@@ -248,7 +270,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
     (frame) => {
       'worklet';
       try {
-        const faces = detector.detectFaces(frame);
+        const faces = activeDetector.detectFaces(frame);
         sendFacesToJs(
           JSON.stringify({
             faces,
@@ -262,7 +284,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
         // 检测错误不上报以免刷屏
       }
     },
-    [detector, sendFacesToJs]
+    [activeDetector, sendFacesToJs]
   );
 
   // App 前后台状态：后台/锁屏时关闭相机，回前台时重新激活，
@@ -433,7 +455,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
             {debugInfo ? `err:${debugInfo.error.toFixed(4)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
             {debugInfo ? `Kp*e:${debugInfo.P.toFixed(4)} Ki*∫:${debugInfo.I.toFixed(4)} Kd*de:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
             {debugInfo ? `out:${debugInfo.output.toFixed(3)}x mode:${debugInfo.mode}` : ''}{'\n'}
-            v5.5
+            v5.6
           </Text>
         </View>
       )}
