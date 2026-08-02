@@ -116,9 +116,10 @@ export class ZoomController {
   /** 扰动速率限幅 (1/s) / 前馈提前量限幅（调优可热改） */
   private RD_CLAMP = 2.0;
   private LEAD_CLAMP = 0.3;
-  /** 死区 / 输出 EMA 时间常数（调优可热改） */
+  /** 死区 / 输出 EMA 时间常数 / 速率限制（调优可热改） */
   private DEADBAND = 0.01;
   private OUTPUT_TAU = 0.12;
+  private MAX_SLEW_PER_SEC = 1.0;
   /** 调优参数组 ID（[Track] 日志分段用；0=未在调优） */
   private tuneId = 0;
 
@@ -126,7 +127,7 @@ export class ZoomController {
   public setTuneParams(p: {
     tuneId?: number; kfQS?: number; kfQV?: number; kfR?: number;
     tLag?: number; rdClamp?: number; leadClamp?: number;
-    deadband?: number; outputTau?: number; resetState?: boolean;
+    deadband?: number; outputTau?: number; maxSlew?: number; resetState?: boolean;
   }): void {
     if (p.tuneId !== undefined) this.tuneId = p.tuneId;
     if (p.kfQS !== undefined) this.KF_QS = p.kfQS;
@@ -137,6 +138,7 @@ export class ZoomController {
     if (p.leadClamp !== undefined) this.LEAD_CLAMP = p.leadClamp;
     if (p.deadband !== undefined) this.DEADBAND = p.deadband;
     if (p.outputTau !== undefined) this.OUTPUT_TAU = p.outputTau;
+    if (p.maxSlew !== undefined) this.MAX_SLEW_PER_SEC = p.maxSlew;
     if (p.resetState) {
       this.integralError = 0;
       this.kS = 0;
@@ -364,10 +366,8 @@ export class ZoomController {
     // 几何前馈：用估计的真实 zoom 计算目标
     const desiredZoom = Math.max(minZoom, Math.min(maxZoom, this.actualZoom * Math.exp(adjustment)));
 
-    // 执行器速率限制：实测 dolly 斜坡只需 ~0.15x/s，3.0/s 宽容 20 倍、
-    // 把检测噪声放大成可见跳动；降到 1.0/s 仍支持 1 秒内 1x→2x 的快速纠偏
-    const MAX_SLEW_PER_SEC = 1.0;
-    const maxDelta = MAX_SLEW_PER_SEC * dt;
+    // 执行器速率限制（可热调）：实测 dolly 斜坡只需 ~0.15x/s
+    const maxDelta = this.MAX_SLEW_PER_SEC * dt;
     const slewLimited = Math.max(
       this.lastOutputZoom - maxDelta,
       Math.min(this.lastOutputZoom + maxDelta, desiredZoom)

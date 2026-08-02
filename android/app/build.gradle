@@ -91,8 +91,8 @@ android {
         applicationId 'com.example.hitchcockcamera'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 49
-        versionName "6.4.0"
+        versionCode 50
+        versionName "6.5.0"
     }
     signingConfigs {
         debug {

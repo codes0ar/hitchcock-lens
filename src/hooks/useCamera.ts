@@ -45,14 +45,22 @@ export function useCamera() {
       );
     }
   }
-  /** 后置超广角物理设备（无则 null，UW 变焦不可用） */
-  const uwDevice = allDevices.find(
-    (d) => d.position === 'back' && (d.physicalDevices || []).includes('ultra-wide-angle-camera')
-  ) ?? null;
+  /** 后置超广角物理设备（无则 null，UW 变焦不可用）。
+   *  注意必须匹配"仅超广角"的物理设备(id=3)，排除融合逻辑设备(id=0 也含 UW 但 minZoom=1) */
+  const uwDevice = allDevices.find((d) => {
+    const phys = d.physicalDevices || [];
+    return d.position === 'back' && phys.length === 1 && phys[0] === 'ultra-wide-angle-camera';
+  }) ?? null;
   /** 超广角模式：true=Camera 切换到 uwDevice（主摄等效 <1x 时） */
   const [uwActive, setUwActive] = useState(false);
   /** UW 设备自身倍率（其原生 1x = 主摄等效 UW_EQUIV） */
   const [uwRatio, setUwRatio] = useState(1.0);
+  // 诊断：uwDevice 探测结果（每 5s 一次，避开一次性日志被缓冲冲掉的问题）
+  const uwLogTs = useRef(0);
+  if (Date.now() - uwLogTs.current > 5000) {
+    uwLogTs.current = Date.now();
+    console.log('[UW] uwDevice=' + (uwDevice ? `id=${uwDevice.id} zoom=${uwDevice.minZoom}~${uwDevice.maxZoom}` : 'NULL') + ' uwActive=' + uwActive);
+  }
 
   const { hasPermission, requestPermission } = useCameraPermission();
   const [mediaPermission, requestMediaPermission] =
@@ -129,12 +137,22 @@ export function useCamera() {
   }, []);
 
   /** 按主摄等效倍率设置 zoom；有超广角设备时支持 <1x（切换到 UW 物理镜头） */
+  const ratioLogTs = useRef(0);
   const setZoomFromRatio = useCallback(
     (zoomRatio: number) => {
+      const now = Date.now();
+      if (now - ratioLogTs.current > 300) {
+        ratioLogTs.current = now;
+        console.log('[UW] setRatio=' + zoomRatio.toFixed(3) + ' hasUW=' + (uwDevice ? 'Y' : 'N'));
+      }
       if (zoomRatio < 1.0 && uwDevice) {
+        console.log('[UW] 切换到超广角: 等效=' + zoomRatio.toFixed(2) + ' UW原生=' + (zoomRatio / UW_EQUIV).toFixed(2));
         setUwActive(true);
         setUwRatio(Math.min(uwDevice.maxZoom, Math.max(uwDevice.minZoom, zoomRatio / UW_EQUIV)));
         return;
+      }
+      if (zoomRatio < 1.0 && !uwDevice) {
+        console.log('[UW] r<1 但 uwDevice 为 NULL，无法切换');
       }
       setUwActive(false);
       const normalized =
