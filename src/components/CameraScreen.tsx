@@ -77,6 +77,8 @@ interface CameraScreenProps {
   facing: CameraFacing;
   zoom: number;
   zoomNormalized: number;
+  /** 主摄等效倍率（捏合缩放基线；UW 模式下为 0.42~1.0） */
+  zoomEquiv: number;
   isTorchOn: boolean;
   hasPermission: boolean;
   cameraReady: boolean;
@@ -117,6 +119,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
   device,
   facing,
   zoom,
+  zoomEquiv,
   isTorchOn,
   hasPermission,
   cameraReady,
@@ -300,8 +303,8 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
 
   // 双指捏合缩放(预览未锁定且未录制时可用; 无人脸也可用, 因为不依赖锁定)
   // 基准用真实变焦倍数 zoom(1~maxX) 做乘法：归一化 0~1 在 1x 时是 0，乘法会恒为 0（旧 bug）
-  const zoomFactorRef = useRef(zoom);
-  useEffect(() => { zoomFactorRef.current = zoom; }, [zoom]);
+  const zoomFactorRef = useRef(zoomEquiv);
+  useEffect(() => { zoomFactorRef.current = zoomEquiv; }, [zoomEquiv]);
   const isLockedRef = useRef(isLocked);
   useEffect(() => { isLockedRef.current = isLocked; }, [isLocked]);
   const recStatusRef = useRef(recordingStatus);
@@ -461,7 +464,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
             {debugInfo ? `err:${debugInfo.error.toFixed(4)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
             {debugInfo ? `Kp*e:${debugInfo.P.toFixed(4)} Ki*∫:${debugInfo.I.toFixed(4)} Kd*de:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
             {debugInfo ? `out:${debugInfo.output.toFixed(3)}x mode:${debugInfo.mode}` : ''}{'\n'}
-            v6.2
+            v6.4
           </Text>
         </View>
       )}

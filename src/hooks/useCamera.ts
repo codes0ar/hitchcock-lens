@@ -10,6 +10,7 @@ import { PermissionsAndroid } from 'react-native';
 import {
   Camera,
   useCameraDevice,
+  useCameraDevices,
   useCameraPermission,
   type CameraDevice,
   type VideoFile,
@@ -22,12 +23,36 @@ import type {
   VideoRecordResult,
 } from '../types';
 
+/** 本机超广角等效倍率（dumpsys 实测: 超广角 2.35mm / 主摄 5.58mm ≈ 0.42x）。设备相关常量。 */
+const UW_EQUIV = 0.42;
+/** 设备枚举日志只打印一次（模块级标志） */
+let camEnumLogged = false;
+
 export function useCamera() {
   const cameraRef = useRef<Camera>(null);
   const recordingPromiseRef = useRef<{ resolve: (v: VideoRecordResult) => void; reject: (e: unknown) => void } | null>(null);
 
   const [facing, setFacing] = useState<CameraFacing>('back');
   const device = useCameraDevice(facing);
+  // 枚举全部相机设备（超广角对第三方开放，id=3 已验证）
+  const allDevices = useCameraDevices();
+  if (!camEnumLogged && allDevices.length > 0) {
+    camEnumLogged = true;
+    for (const d of allDevices) {
+      console.log(
+        `[CamDevices] id=${d.id} pos=${d.position} phys=[${(d.physicalDevices || []).join(',')}]` +
+        ` zoom=${d.minZoom}~${d.maxZoom} neutral=${d.neutralZoom}`
+      );
+    }
+  }
+  /** 后置超广角物理设备（无则 null，UW 变焦不可用） */
+  const uwDevice = allDevices.find(
+    (d) => d.position === 'back' && (d.physicalDevices || []).includes('ultra-wide-angle-camera')
+  ) ?? null;
+  /** 超广角模式：true=Camera 切换到 uwDevice（主摄等效 <1x 时） */
+  const [uwActive, setUwActive] = useState(false);
+  /** UW 设备自身倍率（其原生 1x = 主摄等效 UW_EQUIV） */
+  const [uwRatio, setUwRatio] = useState(1.0);
 
   const { hasPermission, requestPermission } = useCameraPermission();
   const [mediaPermission, requestMediaPermission] =
@@ -99,21 +124,36 @@ export function useCamera() {
   }, []);
 
   const setNormalizedZoom = useCallback((normalizedZoom: number) => {
+    setUwActive(false); // 控制器驱动范围是主摄 1x+，切回主摄
     setZoom(Math.max(0, Math.min(1, normalizedZoom)));
   }, []);
 
+  /** 按主摄等效倍率设置 zoom；有超广角设备时支持 <1x（切换到 UW 物理镜头） */
   const setZoomFromRatio = useCallback(
     (zoomRatio: number) => {
+      if (zoomRatio < 1.0 && uwDevice) {
+        setUwActive(true);
+        setUwRatio(Math.min(uwDevice.maxZoom, Math.max(uwDevice.minZoom, zoomRatio / UW_EQUIV)));
+        return;
+      }
+      setUwActive(false);
       const normalized =
         (zoomRatio - minZoomRatio) / (maxZoomRatio - minZoomRatio);
       setZoom(Math.max(0, Math.min(1, normalized)));
     },
-    [minZoomRatio, maxZoomRatio]
+    [minZoomRatio, maxZoomRatio, uwDevice]
   );
 
   const getCurrentZoomRatio = useCallback((): number => {
     return minZoomRatio + zoom * (maxZoomRatio - minZoomRatio);
   }, [zoom, minZoomRatio, maxZoomRatio]);
+
+  /** 当前实际使用的相机设备（UW 模式下为超广角） */
+  const activeDevice = uwActive && uwDevice ? uwDevice : device;
+  /** 传给 Camera 的设备原生倍率（UW 设备上是 UW 自身倍率） */
+  const cameraZoomFactor = uwActive ? uwRatio : zoomFactor;
+  /** 主摄等效倍率（显示/捏合基线用） */
+  const equivZoomFactor = uwActive ? uwRatio * UW_EQUIV : zoomFactor;
 
   const onCameraReady = useCallback(() => {
     setCameraReady(true);
@@ -196,14 +236,17 @@ export function useCamera() {
 
   return {
     cameraRef,
-    device,
+    device: activeDevice,
+    uwActive,
+    hasUltraWide: uwDevice !== null,
+    equivZoomFactor,
     hasPermission,
     cameraPermission: { granted: hasPermission },
     requestAllPermissions,
     facing,
     flashMode,
     zoom,
-    zoomFactor,
+    zoomFactor: cameraZoomFactor,
     isTorchOn,
     recordingStatus,
     minZoomRatio,

@@ -35,6 +35,8 @@ export default function App(): JSX.Element {
   const {
     cameraRef,
     device,
+    uwActive,
+    equivZoomFactor,
     hasPermission,
     requestAllPermissions,
     facing,
@@ -225,6 +227,7 @@ export default function App(): JSX.Element {
       facing={facing}
       zoom={zoomFactor}
       zoomNormalized={_zoom}
+      zoomEquiv={equivZoomFactor}
       isTorchOn={isTorchOn}
       hasPermission={hasPermission}
       cameraReady={cameraReady}
@@ -235,7 +238,7 @@ export default function App(): JSX.Element {
       faceLockStatus={lockStatus}
       recordingStatus={recordingStatus}
       onToggleRecording={handleToggleRecording}
-      displayZoom={displayZoom}
+      displayZoom={uwActive ? equivZoomFactor : displayZoom}
       isLocked={isLocked}
       onToggleLock={handleToggleLock}
       onManualZoom={handleManualZoom}
