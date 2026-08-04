@@ -200,17 +200,21 @@ export function useZoomControl({
   }, [DEV_TEST_SYNTH, maxZoomRatio, minZoomRatio, setNormalizedZoom]);
 
   /**
-   * 手动重置zoom控制
+   * 手动重置zoom控制（回到 1x 主摄视野；归一化坐标已含 UW 下界，0 ≠ 1x）
    */
   const resetZoom = useCallback(() => {
     targetSetRef.current = false;
     if (controllerRef.current) {
       controllerRef.current.reset();
     }
-    setNormalizedZoom(0);
+    const norm1x =
+      maxZoomRatio > minZoomRatio
+        ? (1.0 - minZoomRatio) / (maxZoomRatio - minZoomRatio)
+        : 0;
+    setNormalizedZoom(Math.max(0, norm1x));
     setDisplayZoom(1.0);
     setShowLockIndicator(false);
-  }, [setNormalizedZoom]);
+  }, [setNormalizedZoom, minZoomRatio, maxZoomRatio]);
 
   /**
    * 强制设置目标人脸尺寸（手动校准）

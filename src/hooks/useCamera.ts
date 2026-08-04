@@ -131,10 +131,25 @@ export function useCamera() {
     setIsTorchOn((prev) => !prev);
   }, []);
 
-  const setNormalizedZoom = useCallback((normalizedZoom: number) => {
-    setUwActive(false); // 控制器驱动范围是主摄 1x+，切回主摄
-    setZoom(Math.max(0, Math.min(1, normalizedZoom)));
-  }, []);
+  /** 归一化 zoom 的下界对应倍率：有超广角时扩到 0.42x（控制器/滑杆可达 UW 视野） */
+  const minZoomEquiv = uwDevice ? UW_EQUIV : minZoomRatio;
+
+  /** 归一化 [0,1] → 等效倍率 [minZoomEquiv, maxZoom]，自动路由超广角/主摄 */
+  const setNormalizedZoom = useCallback(
+    (normalizedZoom: number) => {
+      const nc = Math.max(0, Math.min(1, normalizedZoom));
+      const ratio = minZoomEquiv + nc * (maxZoomRatio - minZoomEquiv);
+      if (ratio < 1.0 && uwDevice) {
+        setUwActive(true);
+        setUwRatio(Math.min(uwDevice.maxZoom, Math.max(uwDevice.minZoom, ratio / UW_EQUIV)));
+        return;
+      }
+      setUwActive(false);
+      // 转回主摄归一化状态
+      setZoom(Math.max(0, Math.min(1, (ratio - minZoomRatio) / (maxZoomRatio - minZoomRatio))));
+    },
+    [uwDevice, minZoomEquiv, minZoomRatio, maxZoomRatio]
+  );
 
   /** 按主摄等效倍率设置 zoom；有超广角设备时支持 <1x（切换到 UW 物理镜头） */
   const ratioLogTs = useRef(0);
@@ -163,8 +178,9 @@ export function useCamera() {
   );
 
   const getCurrentZoomRatio = useCallback((): number => {
+    if (uwActive) return uwRatio * UW_EQUIV;
     return minZoomRatio + zoom * (maxZoomRatio - minZoomRatio);
-  }, [zoom, minZoomRatio, maxZoomRatio]);
+  }, [zoom, minZoomRatio, maxZoomRatio, uwActive, uwRatio]);
 
   /** 当前实际使用的相机设备（UW 模式下为超广角） */
   const activeDevice = uwActive && uwDevice ? uwDevice : device;
@@ -268,6 +284,7 @@ export function useCamera() {
     isTorchOn,
     recordingStatus,
     minZoomRatio,
+    minZoomEquiv,
     maxZoomRatio,
     cameraReady,
     onCameraReady,

@@ -116,10 +116,10 @@ export class ZoomController {
   /** 扰动速率限幅 (1/s) / 前馈提前量限幅（调优可热改） */
   private RD_CLAMP = 2.0;
   private LEAD_CLAMP = 0.3;
-  /** 死区 / 输出 EMA 时间常数 / 速率限制（调优可热改） */
+  /** 死区 / 输出 EMA 时间常数 / 自适应速率上限（调优可热改） */
   private DEADBAND = 0.01;
   private OUTPUT_TAU = 0.12;
-  private MAX_SLEW_PER_SEC = 1.0;
+  private MAX_SLEW_PER_SEC = 4.0; // 自适应限速的上限（|e|≥0.4 时达到）
   /** 调优参数组 ID（[Track] 日志分段用；0=未在调优） */
   private tuneId = 0;
 
@@ -366,8 +366,11 @@ export class ZoomController {
     // 几何前馈：用估计的真实 zoom 计算目标
     const desiredZoom = Math.max(minZoom, Math.min(maxZoom, this.actualZoom * Math.exp(adjustment)));
 
-    // 执行器速率限制（可热调）：实测 dolly 斜坡只需 ~0.15x/s
-    const maxDelta = this.MAX_SLEW_PER_SEC * dt;
+    // 自适应速率限制：误差大时快速追、接近目标时温和（兼顾响应与平滑）。
+    // 实测：固定 1.0x/s 在大范围跟踪时 37% 的样本顶满限速成为瓶颈；
+    // |logError|=0.05 时 0.5x/s（平滑区），0.2 时 2x/s，≥0.4 时封顶 4x/s
+    const adaptiveSlew = Math.max(0.4, Math.min(this.MAX_SLEW_PER_SEC, 10 * Math.abs(logError)));
+    const maxDelta = adaptiveSlew * dt;
     const slewLimited = Math.max(
       this.lastOutputZoom - maxDelta,
       Math.min(this.lastOutputZoom + maxDelta, desiredZoom)
