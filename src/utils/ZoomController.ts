@@ -120,6 +120,11 @@ export class ZoomController {
   private DEADBAND = 0.01;
   private OUTPUT_TAU = 0.12;
   private MAX_SLEW_PER_SEC = 4.0; // 自适应限速的上限（|e|≥0.4 时达到）
+  /** 自适应输出平滑：|e| 小时用 TAU_MAX（重平滑抑抖），大时用 TAU_MIN（快响应）；
+   *  默认 tauMin==tauMax==OUTPUT_TAU 即固定平滑（现状）。实测灵感：pid 误差小但抖，
+   *  平滑模式平滑但滞后——自适应取两者之长 */
+  private TAU_MIN = 0.12;
+  private TAU_MAX = 0.12;
   /** 调优参数组 ID（[Track] 日志分段用；0=未在调优） */
   private tuneId = 0;
 
@@ -127,7 +132,8 @@ export class ZoomController {
   public setTuneParams(p: {
     tuneId?: number; kfQS?: number; kfQV?: number; kfR?: number;
     tLag?: number; rdClamp?: number; leadClamp?: number;
-    deadband?: number; outputTau?: number; maxSlew?: number; resetState?: boolean;
+    deadband?: number; outputTau?: number; tauMin?: number; tauMax?: number;
+    maxSlew?: number; resetState?: boolean;
   }): void {
     if (p.tuneId !== undefined) this.tuneId = p.tuneId;
     if (p.kfQS !== undefined) this.KF_QS = p.kfQS;
@@ -137,7 +143,16 @@ export class ZoomController {
     if (p.rdClamp !== undefined) this.RD_CLAMP = p.rdClamp;
     if (p.leadClamp !== undefined) this.LEAD_CLAMP = p.leadClamp;
     if (p.deadband !== undefined) this.DEADBAND = p.deadband;
-    if (p.outputTau !== undefined) this.OUTPUT_TAU = p.outputTau;
+    if (p.outputTau !== undefined) {
+      this.OUTPUT_TAU = p.outputTau;
+      // 只给 outputTau 而未给 tauMin/tauMax 时，固定平滑（兼容旧调参文件）
+      if (p.tauMin === undefined && p.tauMax === undefined) {
+        this.TAU_MIN = p.outputTau;
+        this.TAU_MAX = p.outputTau;
+      }
+    }
+    if (p.tauMin !== undefined) this.TAU_MIN = p.tauMin;
+    if (p.tauMax !== undefined) this.TAU_MAX = p.tauMax;
     if (p.maxSlew !== undefined) this.MAX_SLEW_PER_SEC = p.maxSlew;
     if (p.resetState) {
       this.integralError = 0;
@@ -376,9 +391,12 @@ export class ZoomController {
       Math.min(this.lastOutputZoom + maxDelta, desiredZoom)
     );
 
-    // 输出 EMA（τ≈120ms 默认）：把检测噪声导致的 zoom 指令阶梯抹平，
-    // 这是"放大时步进跳跃"的主要来源——指令本身平滑了画面才平滑。
-    const outAlpha = dt / (this.OUTPUT_TAU + dt);
+    // 输出 EMA：自适应 τ —— |误差| 小用 TAU_MAX（重平滑抑抖），大用 TAU_MIN（快响应）。
+    // 线性插值区间 |e|∈[0.03, 0.15]；TAU_MIN==TAU_MAX 时退化为固定平滑（现状）
+    const eMag = Math.abs(logError);
+    const k = Math.max(0, Math.min(1, (0.15 - eMag) / (0.15 - 0.03)));
+    const tauEff = this.TAU_MIN + (this.TAU_MAX - this.TAU_MIN) * k;
+    const outAlpha = dt / (tauEff + dt);
     const outputZoom = this.lastOutputZoom + outAlpha * (slewLimited - this.lastOutputZoom);
 
     this.lastOutputZoom = outputZoom;
