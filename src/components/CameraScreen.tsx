@@ -153,9 +153,11 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
 }) => {
   // 实验：autoMode=false 拿原始帧坐标，日志打印原始框，验证检测库给的坐标系
   const { width: winW, height: winH } = useWindowDimensions();
-  /** 检测帧提到 720p：同样物理人脸像素 ×2，更小/更远的人脸也能识别（默认 640x480 小脸检测不到） */
+  /** 检测帧 960x540：720p(1280) 与 480p(640) 的折中。
+   *  仿真结论：检测率 7→10Hz 时 zoom 抖动 -50%、误差持平；720p 实测仅 ~6.3Hz 太低。
+   *  小脸像素仍是 480p 的 1.5 倍（480p 时代小脸识别差的教训不回退） */
   const format = useCameraFormat(device, [
-    { videoResolution: { width: 1280, height: 720 } },
+    { videoResolution: { width: 960, height: 540 } },
     { fps: 30 },
   ]);
   const detectorOptions = useMemo(
@@ -464,7 +466,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
             {debugInfo ? `err:${debugInfo.error.toFixed(4)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
             {debugInfo ? `Kp*e:${debugInfo.P.toFixed(4)} Ki*∫:${debugInfo.I.toFixed(4)} Kd*de:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
             {debugInfo ? `out:${debugInfo.output.toFixed(3)}x mode:${debugInfo.mode}` : ''}{'\n'}
-            v6.7
+            v6.8
           </Text>
         </View>
       )}

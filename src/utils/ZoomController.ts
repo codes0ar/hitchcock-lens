@@ -125,6 +125,25 @@ export class ZoomController {
    *  平滑模式平滑但滞后——自适应取两者之长 */
   private TAU_MIN = 0.12;
   private TAU_MAX = 0.12;
+  /** E2 执行器过驱增益：0=关闭（默认），0.5~1.0 为有效区 */
+  private OD_GAIN = 0;
+  /** E1 掉脸续行：faceW 对数速度 EMA / 续行开关（默认关） */
+  private velEma = 0;
+  private coastEnabled = false;
+
+  /**
+   * 掉脸续行：锁定中检测短暂丢失时，按 velEma 外推 faceW 继续走正常控制管线。
+   * 调用方（useZoomControl 看门狗）负责限制续行时长（~150-650ms）。
+   */
+  public updateCoast(): number {
+    if (!this.coastEnabled || this.targetSize === null || this.lastFaceSize <= 0) {
+      return this.lastOutputZoom;
+    }
+    const now = Date.now();
+    const dt = Math.max(0.03, Math.min(0.3, (now - this.lastUpdateTime) / 1000));
+    const extrapolated = this.lastFaceSize * Math.exp(this.velEma * dt);
+    return this.update(extrapolated, this.lastOutputZoom);
+  }
   /** 调优参数组 ID（[Track] 日志分段用；0=未在调优） */
   private tuneId = 0;
 
@@ -133,7 +152,7 @@ export class ZoomController {
     tuneId?: number; kfQS?: number; kfQV?: number; kfR?: number;
     tLag?: number; rdClamp?: number; leadClamp?: number;
     deadband?: number; outputTau?: number; tauMin?: number; tauMax?: number;
-    maxSlew?: number; resetState?: boolean;
+    maxSlew?: number; odGain?: number; coast?: boolean; resetState?: boolean;
   }): void {
     if (p.tuneId !== undefined) this.tuneId = p.tuneId;
     if (p.kfQS !== undefined) this.KF_QS = p.kfQS;
@@ -154,6 +173,8 @@ export class ZoomController {
     if (p.tauMin !== undefined) this.TAU_MIN = p.tauMin;
     if (p.tauMax !== undefined) this.TAU_MAX = p.tauMax;
     if (p.maxSlew !== undefined) this.MAX_SLEW_PER_SEC = p.maxSlew;
+    if (p.odGain !== undefined) this.OD_GAIN = p.odGain;
+    if (p.coast !== undefined) this.coastEnabled = p.coast;
     if (p.resetState) {
       this.integralError = 0;
       this.kS = 0;
@@ -355,6 +376,11 @@ export class ZoomController {
     } else if (this.lastFaceSize > 0 && dt > 0) {
       logDerivative = -(Math.log(clampedInput) - Math.log(this.lastFaceSize)) / dt;
     }
+    // E1 掉脸续行：faceW 对数速度的 EMA 估计（coast 外推用，无论何种模式都维护）
+    if (this.lastFaceSize > 0 && dt > 0) {
+      const instVel = (Math.log(clampedInput) - Math.log(this.lastFaceSize)) / dt;
+      this.velEma += (instVel - this.velEma) * 0.3;
+    }
     this.lastFaceSize = clampedInput;
 
     // === 扰动速率前馈（T_lag 提前量，补镜头物理滞后；仅 'lead' 模式启用）===
@@ -376,7 +402,15 @@ export class ZoomController {
     const P = this.Kp * effectiveError;
     const I = this.Ki * this.integralError;
     const D = this.Kd * logDerivative;
-    const adjustment = (inDeadband ? 0 : P + I + D) + lead;
+    let adjustment = (inDeadband ? 0 : P + I + D) + lead;
+
+    // === E2 执行器过驱（overdrive）：对输出 EMA + 镜头执行器的确定性滞后做超前补偿。
+    //  与 lead 的本质区别：用控制器自身指令历史（干净信号），不碰带噪测量。
+    //  过驱量 = OD_GAIN × log(指令/输出)，限幅 ±0.15（16%），实测最优区 0.5~1.0
+    if (this.OD_GAIN > 0 && this.lastOutputZoom > 0) {
+      const fullAdj = Math.log(this.actualZoom * Math.exp(adjustment) / this.lastOutputZoom);
+      adjustment += Math.max(-0.15, Math.min(0.15, this.OD_GAIN * fullAdj));
+    }
 
     // 几何前馈：用估计的真实 zoom 计算目标
     const desiredZoom = Math.max(minZoom, Math.min(maxZoom, this.actualZoom * Math.exp(adjustment)));
