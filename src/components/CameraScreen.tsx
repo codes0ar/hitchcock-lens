@@ -22,7 +22,6 @@ import {
 } from 'react-native';
 import {
   Camera,
-  useCameraFormat,
   useFrameProcessor,
   type CameraDevice,
 } from 'react-native-vision-camera';
@@ -153,13 +152,10 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
 }) => {
   // 实验：autoMode=false 拿原始帧坐标，日志打印原始框，验证检测库给的坐标系
   const { width: winW, height: winH } = useWindowDimensions();
-  /** 检测帧 960x540：720p(1280) 与 480p(640) 的折中。
-   *  仿真结论：检测率 7→10Hz 时 zoom 抖动 -50%、误差持平；720p 实测仅 ~6.3Hz 太低。
-   *  小脸像素仍是 480p 的 1.5 倍（480p 时代小脸识别差的教训不回退） */
-  const format = useCameraFormat(device, [
-    { videoResolution: { width: 960, height: 540 } },
-    { fps: 30 },
-  ]);
+  /** 不传 format：CameraX 默认行为 = 预览/录像走默认高分辨率（~1080p），
+   *  ImageAnalysis 帧处理器默认 640x480（检测快 ~8.4Hz）。
+   *  教训：显式 format 会把预览/录像/检测三者绑死在 videoSize 上——
+   *  720p 曾拖垮预览和检测帧率(6.3Hz)，960x540 触发会话错误，640x480 毁掉预览 */
   const detectorOptions = useMemo(
     () =>
       ({
@@ -405,7 +401,6 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
           ref={cameraRef as React.RefObject<Camera>}
           style={styles.camera}
           device={device}
-          format={format}
           isActive={appActive}
           audio={true}
           videoStabilizationMode="off"
@@ -466,7 +461,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
             {debugInfo ? `err:${debugInfo.error.toFixed(4)} dt:${debugInfo.dt.toFixed(2)}` : ''}{'\n'}
             {debugInfo ? `Kp*e:${debugInfo.P.toFixed(4)} Ki*∫:${debugInfo.I.toFixed(4)} Kd*de:${debugInfo.D.toFixed(4)}` : ''}{'\n'}
             {debugInfo ? `out:${debugInfo.output.toFixed(3)}x mode:${debugInfo.mode}` : ''}{'\n'}
-            v6.8
+            v7.0
           </Text>
         </View>
       )}
